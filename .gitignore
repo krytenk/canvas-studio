@@ -21,3 +21,9 @@ recovery/
 
 __pycache__/
 *.pyc
+
+# Local live-engine credentials and private working media
+connection-*.json
+/StudioProjects/
+/renders/
+/proxies/

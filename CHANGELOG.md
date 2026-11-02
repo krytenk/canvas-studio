@@ -1,5 +1,12 @@
 # Changes
 
+## 1.11.0 — local coding-agent control
+
+- Added a standard-library Python STDIO MCP adapter with 11 tools for live browser inspection, templates, blank composition, atomic/dry-run batches, image previews, preflight, workspace exports, portable opening, font/photo import and undo/redo.
+- Guarded document handles/revisions prevent stale edits and exports. Local connection credentials remain private; scoped file access rejects traversal/outside symlinks and accidental overwrite.
+- Browser shape type/fill/gradient/outline/corners are editable directly. Browser artwork follows external agent changes while preserving unapplied form/title drafts. Static social PNG output supports exact 96-DPI layout dimensions.
+- Added a real STDIO integration workflow and CI coverage, plus a sourced studio review and staged plan for campaign layout, media timelines, HyperFrames and optional Three.js. These motion/3D features are not yet implemented.
+
 ## 1.10.0 — a visual design studio
 
 - Replaced the starter catalog with 18 editable designs across Instagram, YouTube, print, presentation, identity and data formats (27 pages). Existing project and legacy template identifiers remain supported.

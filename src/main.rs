@@ -4479,8 +4479,14 @@ fn apply_canvas_studio_theme(ctx: &Context) {
     visuals.selection.bg_fill = Color32::from_rgb(39, 111, 94);
     ctx.style_mut(|s| {
         s.spacing.item_spacing = Vec2::new(7., 6.);
-        s.visuals.widgets.inactive.rounding = Rounding::same(5.);
     });
+    for widget in [
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+    ] {
+        widget.rounding = Rounding::same(5.);
+    }
     visuals.window_rounding = Rounding::same(12.0);
     ctx.set_visuals(visuals);
 }

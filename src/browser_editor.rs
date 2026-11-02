@@ -64,6 +64,7 @@ struct Session {
     undo: Vec<Project>,
     redo: Vec<Project>,
     recovery: Option<PathBuf>,
+    last_actor: String,
 }
 impl Session {
     fn commit(&mut self, candidate: Project) -> Result<(), String> {
@@ -379,6 +380,8 @@ fn edit(project: &mut Project, v: &Value) -> Result<(), String> {
                 underline,
                 line_height,
                 letter_spacing,
+                align,
+                uppercase,
                 ..
             } = &mut e.kind
             else {
@@ -392,6 +395,17 @@ fn edit(project: &mut Project, v: &Value) -> Result<(), String> {
                 *content = new.into();
             }
             if e.style_id.is_some() {
+                if v.as_object().is_some_and(|v| {
+                    v.keys().any(|k| {
+                        ![
+                            "action", "id", "content", "ref", "page", "name", "x", "y", "width",
+                            "height", "rotation",
+                        ]
+                        .contains(&k.as_str())
+                    })
+                }) {
+                    return Err("Edit linked typography styles on desktop; content-only edits are supported here".into());
+                }
                 return Ok(());
             }
             if let Some(f) = f {
@@ -450,6 +464,13 @@ fn edit(project: &mut Project, v: &Value) -> Result<(), String> {
                     }
                     *target = value;
                 }
+            }
+            if let Some(value) = v.get("align") {
+                *align = serde_json::from_value(value.clone())
+                    .map_err(|_| "Use Left, Center or Right alignment")?;
+            }
+            if let Some(value) = v.get("uppercase").and_then(Value::as_bool) {
+                *uppercase = value;
             }
             e.text_format.validate(content)?;
         }
@@ -566,36 +587,133 @@ fn edit(project: &mut Project, v: &Value) -> Result<(), String> {
             let p = project.pages.remove(from);
             project.pages.insert(to, p);
         }
-        "add_text" => {
+        "background" => {
+            let page = v["page"].as_u64().ok_or("Missing page")? as usize;
+            let p = project.pages.get_mut(page).ok_or("Page outside document")?;
+            p.background = PageBackground::Solid(color(v)?);
+        }
+        "layer" => {
+            let e = element_mut(project, v)?;
+            if let Some(name) = v.get("name").and_then(Value::as_str) {
+                if name.len() > 1000 {
+                    return Err("Layer name too long".into());
+                }
+                e.name = name.into();
+            }
+            if v.get("opacity").is_some() {
+                let n = number(v, "opacity")?;
+                if !(0.0..=1.).contains(&n) {
+                    return Err("Opacity must be 0–1".into());
+                }
+                e.opacity = n;
+            }
+        }
+        "reorder_layer" => {
+            let layer = element_mut(project, v)?.id;
+            let p = project
+                .pages
+                .iter_mut()
+                .find(|p| p.elements.iter().any(|e| e.id == layer))
+                .unwrap();
+            let from = p.elements.iter().position(|e| e.id == layer).unwrap();
+            let to = v["to"].as_u64().ok_or("Missing layer position")? as usize;
+            if to >= p.elements.len() {
+                return Err("Layer position outside page".into());
+            }
+            let e = p.elements.remove(from);
+            p.elements.insert(to, e);
+        }
+        "shape" => {
+            let e = element_mut(project, v)?;
+            let ElementKind::Shape {
+                fill,
+                stroke_color,
+                stroke_width,
+                corner_radius,
+                shape_type,
+                ..
+            } = &mut e.kind
+            else {
+                return Err("Select a shape".into());
+            };
+            if let Some(shape) = v.get("shape") {
+                *shape_type = serde_json::from_value(shape.clone()).map_err(|_| "Unknown shape")?;
+            }
+            if v.get("color").is_some() {
+                *fill = FillStyle::Solid(color(v)?);
+            }
+            if let Some(end) = v.get("gradient_end") {
+                let end = color(&json!({"color":end}))?;
+                *fill = FillStyle::LinearGradient {
+                    start: fill.primary_color(),
+                    end,
+                    vertical: v["vertical"].as_bool().unwrap_or(true),
+                };
+            }
+            if let Some(c) = v.get("stroke_color") {
+                *stroke_color = color(&json!({"color":c}))?;
+            }
+            for (key, target) in [
+                ("stroke_width", stroke_width),
+                ("corner_radius", corner_radius),
+            ] {
+                if v.get(key).is_some() {
+                    let n = number(v, key)?;
+                    if !(0.0..=1000.).contains(&n) {
+                        return Err("Shape measurements must be 0–1000".into());
+                    }
+                    *target = n;
+                }
+            }
+        }
+        "add_text" | "add_shape" => {
             let page = v["page"].as_u64().ok_or("Missing page")? as usize;
             if page >= project.pages.len() {
                 return Err("Page outside document".into());
             }
-            let mut e = templates::make_basic_text_element(project.next_id);
-            e.id = project.alloc_id();
-            e.name = "New text".into();
+            let mut e = templates::make_basic_text_element(project.alloc_id());
+            let eid = e.id.to_string();
+            e.name = if action == "add_text" {
+                "New text"
+            } else {
+                "New shape"
+            }
+            .into();
             e.x = 50.;
             e.y = 50.;
             e.width = (project.width - 100.).max(100.);
             e.height = 100.;
-            e.rotation = 0.;
-            e.shadow = Default::default();
-            if let ElementKind::Text {
-                content,
-                font_family,
-                font_size,
-                color,
-                effect,
-                ..
-            } = &mut e.kind
-            {
-                *content = "Your text here".into();
-                *font_family = FontFamily::Sans;
-                *font_size = 24. * project.effective_units_per_inch() / 72.;
-                *color = rgb(25, 30, 40);
-                *effect = TextEffect::None;
+            if action == "add_text" {
+                if let ElementKind::Text { font_size, .. } = &mut e.kind {
+                    *font_size = 24. * project.effective_units_per_inch() / 72.;
+                }
+            } else {
+                let shape_type =
+                    serde_json::from_value(v.get("shape").cloned().unwrap_or(json!("Rectangle")))
+                        .map_err(|_| "Unknown shape")?;
+                e.kind = ElementKind::Shape {
+                    shape_type,
+                    fill: FillStyle::Solid(rgb(49, 74, 230)),
+                    stroke_color: rgb(24, 30, 36),
+                    stroke_width: 0.,
+                    corner_radius: 0.,
+                };
             }
             project.pages[page].elements.push(e);
+            let mut attrs = v.clone();
+            attrs["id"] = json!(eid);
+            attrs["action"] = json!(if action == "add_text" {
+                "text"
+            } else {
+                "shape"
+            });
+            edit(project, &attrs)?;
+            attrs["action"] = json!("layer");
+            edit(project, &attrs)?;
+            if v.get("x").is_some() || v.get("width").is_some() {
+                attrs["action"] = json!("geometry");
+                edit(project, &attrs)?;
+            }
         }
         _ => return Err("Unknown editing action".into()),
     }
@@ -606,8 +724,8 @@ fn state(s: &Session, page: usize) -> Value {
     let page = page.min(p.pages.len().saturating_sub(1));
     let unit = p.effective_units_per_inch() / 72.;
     let elements=p.pages[page].elements.iter().map(|e|{
-        let mut value=json!({"id":e.id.to_string(),"name":e.name,"x":e.x,"y":e.y,"width":e.width,"height":e.height,"rotation":e.rotation,"locked":e.locked,"visible":e.visible,"linked_style":e.style_id,"binding":e.binding});
-        match &e.kind{ElementKind::Text{content,font_family,font_size,color,bold,italic,underline,line_height,letter_spacing,..}=>{value["type"]=json!("text");value["content"]=json!(content);value["family"]=json!(family(*font_family));value["size"]=json!(*font_size/unit);value["color"]=json!(format!("#{:02x}{:02x}{:02x}",color[0],color[1],color[2]));value["bold"]=json!(bold);value["italic"]=json!(italic);value["underline"]=json!(underline);value["leading"]=json!(line_height);value["tracking"]=json!(letter_spacing);value["paragraph"]=json!(e.text_format);},ElementKind::Image{..}=>value["type"]=json!("image"),_=>value["type"]=json!("artwork")};value
+        let mut value=json!({"id":e.id.to_string(),"name":e.name,"x":e.x,"y":e.y,"width":e.width,"height":e.height,"rotation":e.rotation,"opacity":e.opacity,"locked":e.locked,"visible":e.visible,"linked_style":e.style_id,"binding":e.binding});
+        match &e.kind{ElementKind::Text{content,font_family,font_size,color,bold,italic,underline,line_height,letter_spacing,..}=>{value["type"]=json!("text");value["content"]=json!(content);value["family"]=json!(family(*font_family));value["size"]=json!(*font_size/unit);value["color"]=json!(format!("#{:02x}{:02x}{:02x}",color[0],color[1],color[2]));value["bold"]=json!(bold);value["italic"]=json!(italic);value["underline"]=json!(underline);value["leading"]=json!(line_height);value["tracking"]=json!(letter_spacing);value["paragraph"]=json!(e.text_format);},ElementKind::Image{..}=>value["type"]=json!("image"),ElementKind::Shape{shape_type,fill,stroke_color,stroke_width,corner_radius}=>{value["type"]=json!("shape");value["shape"]=json!(shape_type);value["fill"]=json!(fill);value["stroke_color"]=json!(stroke_color);value["stroke_width"]=json!(stroke_width);value["corner_radius"]=json!(corner_radius);},_=>value["type"]=json!("artwork")};value
     }).collect::<Vec<_>>();
     let fields=p.production.fields.iter().map(|(key,field)|json!({"key":key,"value":field.value,"required":field.required,"image":field.image})).collect::<Vec<_>>();
     let mut fonts = FontFamily::all()
@@ -619,7 +737,7 @@ fn state(s: &Session, page: usize) -> Value {
             .iter()
             .map(|f| json!({"id":family(FontFamily::Imported(f.id)),"name":f.name})),
     );
-    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some()})
+    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some()})
 }
 fn preflight_value(project: &Project) -> Value {
     let report = run_export_preflight(project, 300);
@@ -637,6 +755,21 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         .unwrap_or("0".into())
         .parse::<usize>()
         .map_err(|_| "Invalid page")?;
+    if let Some(id) = req.headers.get("x-canvas-document") {
+        if id != &s.project.document_id
+            || req
+                .headers
+                .get("x-canvas-revision")
+                .is_some_and(|r| r.parse::<u64>().ok() != Some(s.revision))
+        {
+            let mut r = Response::error(
+                409,
+                "Document or revision changed; inspect the studio again.",
+            );
+            r.revision = s.revision;
+            return Ok(r);
+        }
+    }
     if req.method == "GET" {
         return match base {
             "/api/templates" => Ok(Response::value(
@@ -656,6 +789,21 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 crate::studio_catalog::thumbnail(&s.project, page, 240)?,
                 s.revision,
             )),
+            "/api/revision" => Ok(Response::value(
+                json!({"revision":s.revision,"document_id":s.project.document_id,"actor":s.last_actor}),
+                s.revision,
+            )),
+            "/api/agent-preview" => {
+                let edge = query(&req.path, "edge")
+                    .unwrap_or("960".into())
+                    .parse::<u32>()
+                    .map_err(|_| "Invalid preview edge")?;
+                Ok(Response::bytes(
+                    "image/png",
+                    crate::studio_catalog::thumbnail(&s.project, page, edge)?,
+                    s.revision,
+                ))
+            }
             "/api/state" => Ok(Response::value(state(s, page), s.revision)),
             "/api/preview.svg" => {
                 let proof = production::resolve(&s.project, false)?;
@@ -691,7 +839,19 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
             }
             "/api/download.png" => {
                 check_delivery(&s.project)?;
-                let image = exporter::render_project_page_at_dpi(&s.project, page, 150, false)?;
+                let dpi = query(&req.path, "dpi")
+                    .unwrap_or("150".into())
+                    .parse::<u32>()
+                    .map_err(|_| "Invalid DPI")?;
+                if ![96, 150, 300].contains(&dpi) {
+                    return Err("Use 96, 150 or 300 DPI".into());
+                }
+                let w = s.project.effective_width_mm() / 25.4 * dpi as f32;
+                let h = s.project.effective_height_mm() / 25.4 * dpi as f32;
+                if w * h > 100_000_000. || w.max(h) > 18000. {
+                    return Err("Output exceeds raster size limit".into());
+                }
+                let image = exporter::render_project_page_at_dpi(&s.project, page, dpi, false)?;
                 let mut bytes = Vec::new();
                 image
                     .write_to(
@@ -719,6 +879,18 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         r.revision = s.revision;
         return Ok(r);
     }
+    if req
+        .headers
+        .get("x-canvas-document")
+        .is_some_and(|id| id != &s.project.document_id)
+    {
+        let mut r = Response::error(
+            409,
+            "The active document changed. Inspect the current document before editing.",
+        );
+        r.revision = s.revision;
+        return Ok(r);
+    }
     match base {
         "/api/command" => {
             let value: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
@@ -741,8 +913,67 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 let pages = document_ops::fitted_pages(&mut project, &source);
                 project.pages.extend(pages);
                 s.commit(project)?;
+            } else if action == "batch" {
+                let commands = value["commands"]
+                    .as_array()
+                    .ok_or("Missing command array")?;
+                if commands.is_empty() || commands.len() > 500 {
+                    return Err("Use 1–500 commands per atomic batch".into());
+                }
+                let mut candidate = s.project.clone();
+                let mut refs = HashMap::<String, String>::new();
+                for command in commands {
+                    let mut command = command.clone();
+                    if let Some(alias) = command
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .and_then(|s| s.strip_prefix('$'))
+                    {
+                        command["id"] = json!(refs.get(alias).ok_or("Unknown layer reference")?);
+                    }
+                    let creates =
+                        matches!(command["action"].as_str(), Some("add_text" | "add_shape"));
+                    let next = candidate.next_id;
+                    edit(&mut candidate, &command)?;
+                    if let Some(alias) = command.get("ref").and_then(Value::as_str) {
+                        if !creates
+                            || alias.is_empty()
+                            || refs.insert(alias.into(), next.to_string()).is_some()
+                        {
+                            return Err("Use a unique ref on newly added text/shapes".into());
+                        }
+                    }
+                }
+                let dry_run = value["dry_run"].as_bool().unwrap_or(false);
+                let report = preflight_value(&candidate);
+                if !dry_run {
+                    s.commit(candidate)?;
+                    s.last_actor = req
+                        .headers
+                        .get("x-canvas-actor")
+                        .filter(|a| a.as_str() == "mcp")
+                        .cloned()
+                        .unwrap_or("browser".into());
+                }
+                return Ok(Response::value(
+                    json!({"revision":s.revision,"document_id":s.project.document_id,"refs":refs,"dry_run":dry_run,"preflight":report}),
+                    s.revision,
+                ));
             } else if action == "new" {
-                s.commit(Project::default())?;
+                let mut candidate = Project::default();
+                if value.get("width").is_some() || value.get("height").is_some() {
+                    let w = number(&value, "width")?;
+                    let h = number(&value, "height")?;
+                    if !(64.0..=16000.).contains(&w) || !(64.0..=16000.).contains(&h) {
+                        return Err("Use dimensions from 64–16000 layout pixels".into());
+                    }
+                    candidate.width = w;
+                    candidate.height = h;
+                    candidate.width_mm = w / 96. * 25.4;
+                    candidate.height_mm = h / 96. * 25.4;
+                    candidate.format = DesignFormat::Custom(w as u32, h as u32);
+                }
+                s.commit(candidate)?;
             } else {
                 let mut project = s.project.clone();
                 edit(&mut project, &value)?;
@@ -829,7 +1060,16 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         }
         _ => return Err("Route not found".into()),
     }
-    Ok(Response::value(json!({"revision":s.revision}), s.revision))
+    s.last_actor = req
+        .headers
+        .get("x-canvas-actor")
+        .filter(|a| a.as_str() == "mcp")
+        .cloned()
+        .unwrap_or("browser".into());
+    Ok(Response::value(
+        json!({"revision":s.revision,"document_id":s.project.document_id}),
+        s.revision,
+    ))
 }
 fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Session>) {
     let req = match request(stream, Some((host, token))) {
@@ -929,12 +1169,40 @@ pub fn run(port: u16, initial: Option<PathBuf>) -> Result<(), String> {
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     let host = format!("127.0.0.1:{port}");
+    // Private loopback credential for local agent adapters, never a public project asset.
+    let connection = recovery.with_file_name(format!("connection-{port}.json"));
+    let staging = connection.with_extension("json.tmp");
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&staging).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+    }
+    file.write_all(
+        serde_json::to_string(
+            &json!({"port":port,"token":token,"version":env!("CARGO_PKG_VERSION")}),
+        )
+        .unwrap()
+        .as_bytes(),
+    )
+    .map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    fs::rename(&staging, &connection).map_err(|e| e.to_string())?;
     let session = Arc::new(Mutex::new(Session {
         project,
         revision: 0,
         undo: Vec::new(),
         redo: Vec::new(),
         recovery: Some(recovery),
+        last_actor: "browser".into(),
     }));
     println!("Canvas Studio browser editor: http://{host}/#{token}\nKeep this local session link private. Ctrl+C stops the server. Download a .canvas copy to save a deliverable.");
     let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -975,6 +1243,7 @@ mod tests {
             undo: Vec::new(),
             redo: Vec::new(),
             recovery: None,
+            last_actor: "browser".into(),
         }
     }
     fn command(s: &mut Session, value: Value) -> Result<Response, String> {
@@ -985,6 +1254,52 @@ mod tests {
             body: serde_json::to_vec(&value).unwrap(),
         };
         route(&req, s)
+    }
+    #[test]
+    fn agent_batches_are_atomic_undoable_scoped_and_previewable() {
+        let mut s = session();
+        command(&mut s, json!({"action":"new","width":1080,"height":1350})).unwrap();
+        let before = s.project.clone();
+        let revision = s.revision;
+        assert!(command(&mut s,json!({"action":"batch","commands":[{"action":"title","value":"Should roll back"},{"action":"geometry","id":"missing"}]})).is_err());
+        assert_eq!(s.project, before);
+        assert_eq!(s.revision, revision);
+        let value = json!({"action":"batch","dry_run":true,"commands":[
+            {"action":"background","page":0,"color":"#181e24"},
+            {"action":"add_shape","page":0,"ref":"disc","shape":"Circle","color":"#d5f171","x":700,"y":100,"width":240,"height":240},
+            {"action":"add_text","page":0,"ref":"headline","content":"A better way","size":72,"color":"#f5f1e8","x":80,"y":470,"width":900,"height":180},
+            {"action":"layer","id":"$headline","name":"Campaign headline"}]});
+        let response = command(&mut s, value.clone()).unwrap();
+        let result: Value = serde_json::from_slice(&response.body).unwrap();
+        assert!(result["refs"]["headline"].is_string());
+        assert_eq!(s.project, before);
+        assert_eq!(s.revision, revision);
+        let mut value = value;
+        value["dry_run"] = json!(false);
+        command(&mut s, value).unwrap();
+        assert_eq!(s.revision, revision + 1);
+        assert_eq!(s.project.pages[0].elements.len(), 2);
+        assert_eq!(s.project.pages[0].elements[1].name, "Campaign headline");
+        command(&mut s, json!({"action":"undo"})).unwrap();
+        assert_eq!(s.project, before);
+        command(&mut s, json!({"action":"redo"})).unwrap();
+        let req = Request {
+            method: "GET".into(),
+            path: "/api/agent-preview?edge=320".into(),
+            headers: HashMap::from([
+                ("x-canvas-document".into(), s.project.document_id.clone()),
+                ("x-canvas-revision".into(), s.revision.to_string()),
+            ]),
+            body: Vec::new(),
+        };
+        let preview = route(&req, &mut s).unwrap();
+        let image = image::load_from_memory(&preview.body).unwrap();
+        assert_eq!(image.height(), 320);
+        let mut wrong = req;
+        wrong
+            .headers
+            .insert("x-canvas-document".into(), "other".into());
+        assert_eq!(route(&wrong, &mut s).unwrap().status, 409);
     }
     #[test]
     fn browser_edits_preserve_native_typography_and_undo_without_stale_overwrites() {

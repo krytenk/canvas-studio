@@ -37,10 +37,11 @@ def run(binary,chrome):
             if process.poll() is not None:raise RuntimeError(text)
             time.sleep(.1)
         assert url,'Server did not start';base,token=url.split('#')
-        def api(path,body=None,revision=None,origin=None):
+        def api(path,body=None,revision=None,origin=None,actor=None):
             headers={'X-Canvas-Token':token}
             if revision is not None:headers['X-Canvas-Revision']=str(revision)
             if origin:headers['Origin']=origin
+            if actor:headers['X-Canvas-Actor']=actor
             data=None if body is None else json.dumps(body).encode()
             return urllib.request.urlopen(urllib.request.Request(base.rstrip('/')+path,data=data,headers=headers))
         # Separate HTTP clients must not silently overwrite a changed document.
@@ -108,6 +109,28 @@ def run(binary,chrome):
             with page.expect_file_chooser() as chooser:page.get_by_role('button',name='+ Photo',exact=True).click()
             chooser.value.set_files(qa/'portrait.jpg')
             page.wait_for_function(f"() => state.elements.length==={count+1}")
+            # A local agent updates the live design; untouched forms refresh, drafts do not.
+            fresh=json.load(api('/api/state'))
+            api('/api/command',{'action':'title','value':'Live agent campaign'},fresh['revision'],actor='mcp').read()
+            page.wait_for_function("() => state.title==='Live agent campaign'")
+            page.get_by_label('guest_name',exact=True).fill('Keep my draft')
+            fresh=json.load(api('/api/state'))
+            api('/api/command',{'action':'title','value':'Second agent update'},fresh['revision'],actor='mcp').read()
+            page.wait_for_function("() => document.querySelector('#message').textContent.includes('form edits are preserved')")
+            assert page.get_by_label('guest_name',exact=True).input_value()=='Keep my draft'
+            page.get_by_role('button',name='Discard unapplied edits',exact=True).click()
+            page.wait_for_function("() => state.title==='Second agent update'")
+            # Native vector shapes remain directly editable in the browser.
+            page.get_by_role('button',name='+ Shape',exact=True).click()
+            page.wait_for_selector('#shape-form:visible')
+            page.locator('#shape-type').select_option('Circle')
+            page.locator('#shape-fill').fill('#315ae6')
+            page.get_by_role('button',name='Apply shape',exact=True).click()
+            page.wait_for_function("() => state.elements.at(-1).shape==='Circle'")
+            page.get_by_role('button',name='Undo',exact=True).click()
+            page.wait_for_function("() => state.elements.at(-1).shape==='Rectangle'")
+            page.get_by_role('button',name='Undo',exact=True).click()
+            page.wait_for_function("() => state.elements.length===4")
             page.get_by_role('button',name='Design library',exact=True).click()
             page.wait_for_selector('.template-card img[src]')
             page.screenshot(path=qa/'studio-gallery.png',full_page=True)

@@ -36,7 +36,7 @@ port-forward or tunnel as though it were that hosted service.
 - Select, rename, add, reorder and delete pages. Inherited book masters and
   numbering continue to render through the native engine.
 - Undo/redo applied edits, run print checks and download editable files, PDF
-  output or a 150-DPI PNG proof of the current page.
+  output or a PNG of the current page at its design pixel dimensions (96 DPI).
 
 Book master editing, shared-style definitions, puzzle generation/rebuilding and
 CSV production remain desktop controls. Their data is preserved in portable
@@ -97,3 +97,8 @@ The native check additionally needs Xvfb, xwininfo, libX11 and libXtst. Both dri
 use isolated data/profiles and copied fixtures. They do not read a personal
 browser profile or modify existing user projects. GitHub CI runs these workflows
 and retains their screenshots/results as artifacts.
+
+The visual catalog includes Instagram/YouTube designs and multi-page sets.
+Native shape type, fill/gradient, outline and corner-radius controls are editable
+in the browser. Live coding-agent edits and preview/export are available through
+the [local MCP adapter](AGENT-CONTROL.md).

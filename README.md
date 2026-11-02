@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.10.0**, with imported fonts, rich paragraphs, portable
+Current development: **1.11.0**, with imported fonts, rich paragraphs, portable
 projects, linked collections/CSV production, books, checked word searches and local browser editing. An 18-design visual catalog includes editable Instagram
 carousels/stories and YouTube thumbnails/channel artwork.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
@@ -22,6 +22,16 @@ native editable files or print outputs. No paid service or Node runtime is neede
 This is a local browser editor backed by the desktop engine; it is not a hosted
 multi-user customer service. See the [browser guide](docs/BROWSER-EDITOR.md) for
 supported controls, recovery, delivery formats and limits.
+
+## Design with a coding agent
+
+The local [STDIO MCP adapter](docs/AGENT-CONTROL.md) exposes 11 tools to inspect,
+compose, preview, check and export the live browser design. It uses explicit
+document/revision checks, atomic undoable batches and a scoped local workspace.
+No model subscription or Python package is required by the adapter itself.
+
+See the [professional studio review and next milestones](docs/PROFESSIONAL-STUDIO-REVIEW-2026-11-02.md)
+for the motion/HyperFrames/Three.js direction and current limitations.
 
 ## Run the app
 

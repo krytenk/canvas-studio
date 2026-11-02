@@ -8,7 +8,7 @@ let queue=Promise.resolve();
 const drafts=new Map();
 function restoreDraft(form,key){form.dataset.draftKey=key;const draft=drafts.get(key);if(draft)for(const input of form.querySelectorAll('input,textarea,select')){const value=draft[input.id||input.name];if(value!==undefined){if(input.type==='checkbox')input.checked=value;else input.value=value;}}}
 function updateDraftNotice(){$('discard-drafts').hidden=!drafts.size;}
-document.addEventListener('input',event=>{const form=event.target.closest('form[data-draft-key]');if(!form)return;const values={};for(const input of form.querySelectorAll('input,textarea,select'))values[input.id||input.name]=input.type==='checkbox'?input.checked:input.value;drafts.set(form.dataset.draftKey,values);updateDraftNotice();});
+document.addEventListener('input',event=>{if(['document-title','page-title'].includes(event.target.id)){drafts.set(event.target.id,{value:event.target.value});updateDraftNotice();return;}const form=event.target.closest('form[data-draft-key]');if(!form)return;const values={};for(const input of form.querySelectorAll('input,textarea,select'))values[input.id||input.name]=input.type==='checkbox'?input.checked:input.value;drafts.set(form.dataset.draftKey,values);updateDraftNotice();});
 
 const paragraphLabels={space_before:'Before (pt)',space_after:'After (pt)',first_line_indent:'Indent (pt)',inset_left:'Left inset',inset_right:'Right inset',inset_top:'Top inset',inset_bottom:'Bottom inset'};
 const geometryLabels={x:'X',y:'Y',width:'Width',height:'Height',rotation:'Rotation °'};
@@ -27,7 +27,7 @@ function tab(name){for(const e of document.querySelectorAll('[data-tab]')){e.cla
 function select(id){document.body.classList.add('inspector-open');selected=id;renderSelection();renderLayers();renderTargets();tab('edit');}
 async function refresh(){
  const response=await api(`/api/state?page=${page}`);state=await response.json();page=state.page;if(!state.elements.some(e=>e.id===selected))selected=null;
- $('document-title').value=state.title;$('page-title').value=state.pages[page].title;$('page-count').textContent=state.pages.length;
+ $('document-title').value=drafts.get('document-title')?.value??state.title;$('page-title').value=drafts.get('page-title')?.value??state.pages[page].title;$('page-count').textContent=state.pages.length;
  $('session-state').textContent=`${state.recovery?'Recovery saved on this device':'Session only'}${pending?' · Save a copy when ready':''}`;
  $('dimensions').textContent=`${state.width_mm.toFixed(1)} × ${state.height_mm.toFixed(1)} mm · page ${page+1} of ${state.pages.length}`;
  $('undo').disabled=!state.undo;$('redo').disabled=!state.redo;$('up-page').disabled=page===0;$('down-page').disabled=page===state.pages.length-1;$('delete-page').disabled=state.pages.length===1;
@@ -38,10 +38,20 @@ function renderFields(){const root=$('fields');root.replaceChildren();if(!state.
  for(const field of state.fields){const form=elem('form',{class:'field-row'});const label=elem('label',{},field.key+(field.required?' · required':''));if(field.image){form.append(label,elem('p',{class:'muted'},field.value||'No photo selected'),button('Choose photo…',()=>choosePhoto({key:field.key})));}else{const input=elem('input',{'aria-label':field.key,value:field.value,name:'value'});label.append(input);form.append(label,elem('button',{type:'submit'},'Apply across collection'));form.addEventListener('submit',event=>{event.preventDefault();command({action:'field',key:field.key,value:input.value},'field:'+field.key);});}restoreDraft(form,'field:'+field.key);root.append(form);}
 }
 function renderLayers(){const root=$('layers');root.replaceChildren();for(const layer of [...state.elements].reverse()){const row=elem('div',{class:'layer-row'+(layer.id===selected?' active':'')});row.append(button(`${layer.type==='text'?'T':layer.type==='image'?'▧':'◇'} ${layer.name}`,()=>select(layer.id)),button(layer.locked?'Unlock':'Lock',()=>command({action:'lock',id:layer.id,value:!layer.locked}),{'aria-label':`${layer.locked?'Unlock':'Lock'} ${layer.name}`}));root.append(row);}}
-function renderSelection(){const layer=current();$('selection-empty').hidden=!!layer;$('text-form').hidden=!layer||layer.type!=='text';$('image-editor').hidden=!layer||layer.type!=='image';$('geometry-form').hidden=!layer;if(!layer)return;
+function renderSelection(){const layer=current();$('selection-empty').hidden=!!layer;$('text-form').hidden=!layer||layer.type!=='text';$('image-editor').hidden=!layer||layer.type!=='image';$('shape-form').hidden=!layer||layer.type!=='shape';$('geometry-form').hidden=!layer;if(!layer)return;
  $('geometry-form').querySelectorAll('input,button').forEach(e=>e.disabled=layer.locked);$('replace-photo').disabled=layer.locked;
  for(const key of Object.keys(geometryLabels))$('geometry-'+key).value=Number(layer[key].toFixed(3));
  restoreDraft($('geometry-form'),'geometry:'+layer.id);
+ if(layer.type==='shape'){
+  const hex=c=>'#'+c.slice(0,3).map(n=>n.toString(16).padStart(2,'0')).join('');
+  const gradient=layer.fill.LinearGradient;
+  $('shape-type').value=layer.shape;$('shape-fill').value=hex(gradient?gradient.start:layer.fill.Solid);
+  $('shape-gradient').checked=!!gradient;$('shape-end').value=hex(gradient?gradient.end:[213,241,113]);
+  $('shape-direction').value=gradient?.vertical?'vertical':'horizontal';$('shape-stroke').value=hex(layer.stroke_color);
+  $('shape-width').value=layer.stroke_width;$('shape-radius').value=layer.corner_radius;
+  $('shape-form').querySelectorAll('input,select,button').forEach(e=>e.disabled=layer.locked);
+  restoreDraft($('shape-form'),'shape:'+layer.id);
+ }
  if(layer.type!=='text')return;
  $('text-content').value=layer.content;$('font').replaceChildren(...state.fonts.map(f=>elem('option',{value:f.id},f.name)));$('font').value=layer.family;
  $('font-size').value=Number(layer.size.toFixed(3));$('ink').value=layer.color;$('leading').value=Number(layer.leading.toFixed(3));$('tracking').value=Number(layer.tracking.toFixed(3));
@@ -70,8 +80,8 @@ async function download(path,name){return serial(async()=>{if(drafts.size){notic
 for(const [key,label]of Object.entries(paragraphLabels)){const l=elem('label',{},label);l.append(elem('input',{id:'paragraph-'+key,type:'number',min:0,max:300,step:'any'}));$('paragraph-controls').append(l);}
 for(const [key,label]of Object.entries(geometryLabels)){const l=elem('label',{},label);l.append(elem('input',{id:'geometry-'+key,type:'number',step:'any'}));$('geometry-controls').append(l);}
 for(const b of document.querySelectorAll('[data-tab]'))b.addEventListener('click',()=>tab(b.dataset.tab));
-$('document-title').addEventListener('change',event=>command({action:'title',value:event.target.value}));
-$('page-title').addEventListener('change',event=>command({action:'page_title',id:state.pages[page].id,value:event.target.value}));
+$('document-title').addEventListener('change',event=>command({action:'title',value:event.target.value},'document-title'));
+$('page-title').addEventListener('change',event=>command({action:'page_title',id:state.pages[page].id,value:event.target.value},'page-title'));
 $('add-photo').onclick=()=>choosePhoto({add:true,page});
 $('open').onclick=()=>{if((pending||drafts.size)&&!confirm('Download your current document first if you need an independent copy. Open another design?'))return;$('open-file').value='';$('open-file').click();};
 $('open-file').onchange=event=>{const file=event.target.files[0];if(file)upload('/api/open',file);};
@@ -79,7 +89,7 @@ $('font-file').onchange=event=>{const file=event.target.files[0];if(file)upload(
 $('import-font').onclick=()=>{$('font-file').value='';$('font-file').click();};
 $('photo-file').onchange=event=>{const file=event.target.files[0];if(file&&photoTarget){const target=photoTarget;upload(target.add?`/api/add-image?page=${target.page}`:target.key?`/api/photo?key=${encodeURIComponent(target.key)}`:`/api/image?id=${target.id}`,file);}};
 $('replace-photo').onclick=()=>{const layer=current();if(layer)choosePhoto(layer.binding?{key:layer.binding}:{id:layer.id});};
-$('save').onclick=()=>download('/api/download.canvas','design.canvas');$('pdf').onclick=()=>download('/api/download.pdf','design.pdf');$('png').onclick=()=>download(`/api/download.png?page=${page}`,'page.png');
+$('save').onclick=()=>download('/api/download.canvas','design.canvas');$('pdf').onclick=()=>download('/api/download.pdf','design.pdf');$('png').onclick=()=>download(`/api/download.png?page=${page}&dpi=96`,'page.png');
 $('undo').onclick=()=>command({action:'undo'});$('redo').onclick=()=>command({action:'redo'});
 $('discard-drafts').onclick=()=>{drafts.clear();updateDraftNotice();serial(()=>refresh());};
 $('refresh').onclick=()=>serial(()=>refresh());$('guide').onclick=()=>$('help').showModal();$('close-help').onclick=()=>$('help').close();
@@ -89,7 +99,7 @@ $('delete-page').onclick=()=>{if(confirm('Delete this page? You can undo this ac
 $('up-page').onclick=()=>{const target=page-1;command({action:'move_page',id:state.pages[page].id,to:target}).then(()=>{page=target;serial(()=>refresh());});};
 $('down-page').onclick=()=>{const target=page+1;command({action:'move_page',id:state.pages[page].id,to:target}).then(()=>{page=target;serial(()=>refresh());});};
 for(const b of document.querySelectorAll('[data-template]'))b.onclick=()=>{if((pending||drafts.size)&&!confirm('Replace the current session document? Download a copy first. Undo is available.'))return;page=0;command(b.dataset.template==='new'?{action:'new'}:{action:'template',template:b.dataset.template});};
-$('text-form').onsubmit=event=>{event.preventDefault();if(!selected)return;const value={action:'text',id:selected,content:$('text-content').value,family:$('font').value,size:Number($('font-size').value),color:$('ink').value,bold:$('bold').checked,italic:$('italic').checked,underline:$('underline').checked,leading:Number($('leading').value),tracking:Number($('tracking').value)};for(const key of Object.keys(paragraphLabels))value[key]=Number($('paragraph-'+key).value);command(value,'text:'+selected);};
+$('text-form').onsubmit=event=>{event.preventDefault();if(!selected)return;const value={action:'text',id:selected,content:$('text-content').value,family:$('font').value,size:Number($('font-size').value),color:$('ink').value,bold:$('bold').checked,italic:$('italic').checked,underline:$('underline').checked,leading:Number($('leading').value),tracking:Number($('tracking').value)};for(const key of Object.keys(paragraphLabels))value[key]=Number($('paragraph-'+key).value);command(current()?.linked_style?{action:'text',id:selected,content:value.content}:value,'text:'+selected);};
 $('geometry-form').onsubmit=event=>{event.preventDefault();const value={action:'geometry',id:selected};for(const key of Object.keys(geometryLabels))value[key]=Number($('geometry-'+key).value);command(value,'geometry:'+selected);};
 $('duplicate').onclick=()=>command({action:'duplicate',id:selected});$('delete').onclick=()=>command({action:'delete',id:selected});
 $('text-content').addEventListener('select',()=>{range=[$('text-content').selectionStart,$('text-content').selectionEnd];});
@@ -98,3 +108,24 @@ $('zoom').onchange=fit;new ResizeObserver(fit).observe($('paper-scroll'));
 window.addEventListener('beforeunload',event=>{if(pending||drafts.size){event.preventDefault();event.returnValue='';}});
 document.addEventListener('keydown',event=>{if(!(event.ctrlKey||event.metaKey))return;const key=event.key.toLowerCase();if(key==='s'){event.preventDefault();$('save').click();}else if(key==='z'&&!['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){event.preventDefault();command({action:event.shiftKey?'redo':'undo'});}});
 refresh().catch(error=>notice(error.message,true));
+
+// Live agent changes appear in the same document. Never overwrite a form draft.
+let externalRevision=null,polling=false;
+setInterval(async()=>{
+ if(!state||working||drag||document.hidden||polling)return;
+ polling=true;
+ try{
+  const update=await(await api('/api/revision')).json();
+  if(update.revision===state.revision){externalRevision=null;return;}
+  if(drafts.size){
+   if(externalRevision!==update.revision){externalRevision=update.revision;notice('The studio changed in another tab or agent. Your form edits are preserved. Review or discard them before refreshing.',true);}
+   return;
+  }
+  await serial(async()=>{if(drafts.size||drag)return;pending=true;await refresh();notice(update.actor==='mcp'?'Agent changes applied · Undo is available.':'Studio updated from another tab.');});
+ }catch(error){/* A stopped local engine is reported on the next user action. */}
+ finally{polling=false;}
+},1500);
+
+for(const name of ['Rectangle','RoundedRect','Circle','Triangle','RightTriangle','Diamond','Pentagon','Hexagon','Octagon','Star5','Star8','Burst12','Heart','ArrowRight','ArrowLeft','SpeechBubble','BadgeShield','Cross','Pill','LineHorizontal','Parallelogram','Trapezoid','BannerRibbon'])$('shape-type').append(elem('option',{value:name},name.replace(/([a-z])([A-Z])/g,'$1 $2')));
+$('add-shape').onclick=()=>serial(async()=>{await api('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add_shape',page})});pending=true;await refresh();select(state.elements.at(-1).id);});
+$('shape-form').onsubmit=event=>{event.preventDefault();if(!selected)return;const value={action:'shape',id:selected,shape:$('shape-type').value,color:$('shape-fill').value,stroke_color:$('shape-stroke').value,stroke_width:Number($('shape-width').value),corner_radius:Number($('shape-radius').value)};if($('shape-gradient').checked){value.gradient_end=$('shape-end').value;value.vertical=$('shape-direction').value==='vertical';}command(value,'shape:'+selected);};

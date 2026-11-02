@@ -39,11 +39,15 @@ jobs:
         run: |
           .ui-venv/bin/python scripts/browser_smoke.py --binary target/release/canvas-studio --chrome chromium
           .ui-venv/bin/python scripts/native_smoke.py --binary target/release/canvas-studio
+      - name: Exercise the STDIO agent protocol and workspace delivery
+        run: .ui-venv/bin/python scripts/mcp_smoke.py --binary target/release/canvas-studio
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: canvas-studio-ui-proofs
           path: |
+            qa/mcp/agent-preview.png
+            qa/mcp/report.json
             qa/browser/*.png
             qa/browser/report.json
             qa/native-smoke/*.png

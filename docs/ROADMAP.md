@@ -15,3 +15,17 @@ Stages are accepted through completed product workflows, not through the existen
 The native Linux application can now host local browser editing; see [BROWSER-EDITOR.md](BROWSER-EDITOR.md).
 Hosted public customer links, additional puzzle families, PPTX and fillable-PDF editing remain future scope.
 Broader desktop-platform/physical-print acceptance and a full-resolution production-book benchmark remain open.
+
+## Professional studio, agent control and motion
+
+The [2 November studio review](PROFESSIONAL-STUDIO-REVIEW-2026-11-02.md) is the
+current direction beyond the print foundations. Versions 1.10–1.11 implement an
+18-design / 27-page visual catalog, refreshed native/browser interfaces and a
+working live-browser STDIO MCP adapter. See [agent control](AGENT-CONTROL.md).
+
+Next: shared layout commands and campaign components/brand tokens; then a real
+media timeline and audio/proxy pipeline; then a deterministic HyperFrames
+adapter; then practical optional Three.js product mockups. Video, HyperFrames
+rendering and 3D editing are planned work, not current app capabilities. Each
+stage has an acceptance workflow in the review. Local storage is sufficient;
+remote hosting remains a separate decision.

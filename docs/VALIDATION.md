@@ -1,5 +1,24 @@
 # Canvas Studio validation
 
+## 1.11.0 studio and agent integration
+
+75 release checks pass, including the 18-design / 27-page catalog, all-template
+production/export proofs, atomic batch rollback/dry-run/undo, alias resolution,
+custom dimensions and guarded image previews. The native/browser UI workflows
+remain required CI checks. New browser coverage exercises visual catalog search,
+carousel preview/insertion, live agent refresh with draft preservation and vector
+shape editing; the 700 px overflow check remains in place.
+
+`scripts/mcp_smoke.py` drives the real STDIO adapter and native browser engine.
+Both current per-request and legacy initialization protocols pass; a fresh
+adapter process uses explicit document handles. The workflow composes a campaign,
+checks it, previews its image, exports exact 1080×1350 PNG and selectable-text PDF,
+then opens a portable project with fonts/photos in a cold native process.
+Rollback, dry-run, undo/redo, stale revisions, wrong documents, scoped paths,
+outside symlinks, no-overwrite and credentials excluded from tool results pass.
+Proofs are under ignored `qa/mcp/`. No particular coding-client installation,
+video render, 3D workflow or public hosting is certified by these tests.
+
 ## 1.9.0 browser/native integration
 
 73 release checks pass. New coverage includes browser edit/undo/revision semantics,
