@@ -16,7 +16,7 @@ jobs:
       - name: Install native libraries and PDF verification tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxkbcommon-dev libwayland-dev libegl1-mesa-dev poppler-utils xvfb libxtst6
+          sudo apt-get install -y build-essential pkg-config libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxkbcommon-dev libwayland-dev libegl1-mesa-dev poppler-utils xvfb libxtst6 x11-utils
       - name: Install Rust formatting support
         run: rustup component add rustfmt
       - name: Check formatting
