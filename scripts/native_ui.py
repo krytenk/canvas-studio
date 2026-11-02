@@ -14,7 +14,13 @@ T.XTestFakeButtonEvent.argtypes=[C.c_void_p,C.c_uint,C.c_int,C.c_ulong];T.XTestF
 raw=subprocess.check_output(['xwininfo','-root','-tree'],text=True); m=re.search(r'(0x[0-9a-f]+) "Canvas Studio[^\n]*? (\d+)x(\d+)[+-]\d+[+-]\d+\s+([+-]\d+)([+-]\d+)',raw)
 if not m: raise RuntimeError('No Canvas Studio X11 window')
 w=int(m[1],16);width,height,x,y=map(int,m.groups()[1:]);print('window',hex(w),width,height,x,y)
-def focus(): X.XRaiseWindow(d,w);X.XSetInputFocus(d,w,2,0);X.XFlush(d);time.sleep(.2)
+def focus():
+ for _ in range(300):
+  details=subprocess.run(['xwininfo','-id',hex(w)],capture_output=True,text=True)
+  if 'Map State: IsViewable' in details.stdout:break
+  time.sleep(.1)
+ else:raise RuntimeError('Native window did not become viewable: '+details.stdout+details.stderr)
+ X.XRaiseWindow(d,w);X.XSetInputFocus(d,w,2,0);X.XFlush(d);time.sleep(.2)
 def click(cx,cy,button=1): T.XTestFakeMotionEvent(d,-1,x+cx,y+cy,0);T.XTestFakeButtonEvent(d,button,1,0);T.XTestFakeButtonEvent(d,button,0,0);X.XFlush(d);time.sleep(.2)
 def key(name,down): code=X.XKeysymToKeycode(d,X.XStringToKeysym(name.encode()));T.XTestFakeKeyEvent(d,code,down,0);X.XFlush(d)
 def chord(*names):

@@ -8,7 +8,7 @@ def run(binary,xvfb):
     qa=ROOT/'qa/native-smoke';qa.mkdir(parents=True,exist_ok=True)
     working=qa/'working.canvas';shutil.copy2(ROOT/'qa/collection-proof/collection.canvas',working)
     display=':94';env=os.environ.copy();env['DISPLAY']=display;env.pop('WAYLAND_DISPLAY',None);env['LIBGL_ALWAYS_SOFTWARE']='1';env['XDG_SESSION_TYPE']='x11';env['WINIT_X11_SCALE_FACTOR']='1';env['XDG_DATA_HOME']=str(qa/'app-data')
-    log=(qa/'native.log').open('wb');server=subprocess.Popen([xvfb,display,'-screen','0','1440x900x24','-nolisten','tcp'],stdout=log,stderr=subprocess.STDOUT)
+    log=(qa/'native.log').open('wb');server=subprocess.Popen([xvfb,display,'-screen','0','1440x900x24','-nolisten','tcp','-noreset'],stdout=log,stderr=subprocess.STDOUT)
     app=None
     try:
         for _ in range(40):
