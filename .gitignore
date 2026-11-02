@@ -27,3 +27,5 @@ connection-*.json
 /StudioProjects/
 /renders/
 /proxies/
+
+/tools/hyperframes/node_modules/

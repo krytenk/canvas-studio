@@ -1,9 +1,9 @@
 # Film studio · 1.13
 
-Stage C adds a local, persisted video/audio editing foundation to the same design
+This guide describes the Stage C baseline introduced in 1.13. Stage C adds a local, persisted video/audio editing foundation to the same design
 project. It is a useful cuts, sound, caption and artwork workflow. HyperFrames,
-keyframed effects, transitions, speed ramps, automatic transcription and Three.js
-remain subsequent work. This is not feature parity with CapCut.
+transitions, speed ramps, automatic transcription and Three.js
+remain subsequent work. Version 1.14 adds [keyframes and a HyperFrames adapter](MOTION-STUDIO.md). This is not feature parity with CapCut.
 
 ## Use it
 

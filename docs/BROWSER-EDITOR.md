@@ -111,3 +111,7 @@ playhead, mix sound, edit captions and render a synchronized preview. Jobs retai
 their source revision; edits mark older previews stale. Save editable projects
 with originals embedded. See the [complete film guide](FILM-STUDIO.md) for
 FFmpeg requirements, delivery, resource limits and native playback differences.
+
+Version 1.14 adds per-clip Motion presets and editable keyframes, exact-time
+HyperFrames frame review, rendered motion previews and source ZIP delivery.
+See [Motion studio](MOTION-STUDIO.md); setup is optional for static editing.

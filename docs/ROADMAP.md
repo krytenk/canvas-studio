@@ -25,8 +25,8 @@ working live-browser STDIO MCP adapter. See [agent control](AGENT-CONTROL.md).
 
 Next: shared layout commands and campaign components/brand tokens; then a real
 media timeline and audio/proxy pipeline; then a deterministic HyperFrames
-adapter; then practical optional Three.js product mockups. Video tracks and rendered AV previews are implemented in 1.13; HyperFrames
-rendering and 3D editing remain planned work. Each
+adapter; then practical optional Three.js product mockups. Video tracks and rendered AV previews arrived in 1.13; version 1.14 adds
+HyperFrames motion/source delivery. Practical 3D remains the next stage. Each
 stage has an acceptance workflow in the review. Local storage is sufficient;
 remote hosting remains a separate decision.
 
@@ -50,3 +50,13 @@ licensed film demonstration and deterministic decoded frame/audio checks cover
 the acceptance workflow. The next stage is D: a deterministic HyperFrames
 adapter with editable motion, seekable frame review and a render/source manifest.
 Three.js remains stage E; no hosting or paid services were added.
+
+### Stage D — implemented in 1.14
+
+[Motion studio](MOTION-STUDIO.md) adds saved keyframes/presets, native/browser/agent
+controls and a pinned local HyperFrames adapter. Exact frame seeking, repeated
+render/split frame equivalence, audio synchronization, portable motion projects
+and source ZIP/manifests form its acceptance workflow. Native SVG keeps text and
+artwork editable alongside the native master; imported HTML is not a second
+project model. Node/Chromium are optional local motion dependencies. The next
+stage is E: practical Three.js product/book mockups with a static poster fallback.

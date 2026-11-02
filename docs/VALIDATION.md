@@ -1,5 +1,19 @@
 # Canvas Studio validation
 
+## 1.14.0 deterministic motion
+
+87 local Rust checks pass. New tests cover split/move/trim animation clocks,
+key validation and guarded version-4 portable envelopes. The real MCP motion
+workflow checks an exact-time marker position, identical decoded pixels across
+repeat renders and splits, an audio cue within 0.1 ms in the local fixture,
+source/archive/hash integrity, native master reopening, cancellation and atomic
+invalid-key rejection. Static/campaign/film regressions remain required.
+
+The optional isolated CI browser edits a motion preset and opens the custom-key
+controls. A credited real-footage demo exercises normalized video, native SVG
+caption/design animation, synchronized playback and source delivery. These are
+scoped acceptance checks; they do not certify every codec/host or a full NLE.
+
 ## 1.13.0 film foundation
 
 84 local Rust checks pass, including frame edits, source/envelope preservation,

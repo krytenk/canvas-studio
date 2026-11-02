@@ -112,6 +112,69 @@ pub struct Clip {
     pub opacity: f32,
     pub audio: AudioMix,
     pub caption: Option<CaptionStyle>,
+    #[serde(default)]
+    pub motion: Option<Motion>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Motion {
+    pub origin: i64,
+    pub span: u64,
+    pub keys: Vec<MotionKey>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MotionKey {
+    pub frame: u64,
+    pub x: f32,
+    pub y: f32,
+    pub scale: f32,
+    pub rotation: f32,
+    pub opacity: f32,
+    pub ease: String,
+}
+impl MotionKey {
+    fn neutral(frame: u64) -> Self {
+        Self {
+            frame,
+            x: 0.,
+            y: 0.,
+            scale: 1.,
+            rotation: 0.,
+            opacity: 1.,
+            ease: "ease-out".into(),
+        }
+    }
+}
+pub fn has_motion(t: &Timeline) -> bool {
+    t.clips.iter().any(|c| c.motion.is_some())
+}
+fn validate_motion(m: &Motion) -> Result<(), String> {
+    if m.span == 0
+        || m.span > 36000
+        || m.origin.unsigned_abs() > 72000
+        || m.keys.is_empty()
+        || m.keys.len() > 64
+    {
+        return Err("Use 1–64 motion keyframes within the original clip span".into());
+    }
+    let mut previous = None;
+    for k in &m.keys {
+        if k.frame >= m.span
+            || previous.is_some_and(|p| p >= k.frame)
+            || [k.x, k.y, k.scale, k.rotation, k.opacity]
+                .iter()
+                .any(|x| !x.is_finite())
+            || k.x.abs() > 16000.
+            || k.y.abs() > 16000.
+            || !(0.05..=8.).contains(&k.scale)
+            || k.rotation.abs() > 3600.
+            || !(0.0..=1.).contains(&k.opacity)
+            || !["linear", "ease-in", "ease-out", "ease-in-out", "hold"].contains(&k.ease.as_str())
+        {
+            return Err("Motion keys must be ordered and unique; use finite placement, scale 0.05–8 and opacity 0–1".into());
+        }
+        previous = Some(k.frame);
+    }
+    Ok(())
 }
 fn s<'a>(v: &'a Value, k: &str) -> Result<&'a str, String> {
     v[k].as_str().ok_or_else(|| format!("Missing text: {k}"))
@@ -261,6 +324,12 @@ pub fn validate(t: &Timeline) -> Result<(), String> {
             {
                 return Err("Use a non-empty caption on a caption track".into());
             }
+        }
+        if let Some(m) = &c.motion {
+            if track.kind == "audio" {
+                return Err("Motion belongs on a picture or caption clip".into());
+            }
+            validate_motion(m)?;
         }
         let a = &c.audio;
         if !a.gain_db.is_finite()
@@ -466,6 +535,62 @@ pub fn apply(p: &mut Project, v: &Value) -> Result<(), String> {
             c.audio.enabled = false;
             t.clips.push(c);
         }
+        "film_motion" => {
+            let id = s(v, "id")?;
+            let c = t
+                .clips
+                .iter_mut()
+                .find(|c| c.id == id)
+                .ok_or("Clip not found")?;
+            if v["preset"] == "none" {
+                c.motion = None;
+            } else {
+                let keys = if let Some(keys) = v.get("keys") {
+                    serde_json::from_value(keys.clone())
+                        .map_err(|e| format!("Invalid motion keys: {e}"))?
+                } else {
+                    if c.duration < 2 {
+                        return Err("Motion presets need at least two frames".into());
+                    }
+                    let end = (t.fps as u64).min(c.duration - 1);
+                    let mut a = MotionKey::neutral(0);
+                    let mut b = MotionKey::neutral(end);
+                    match s(v, "preset")? {
+                        "fade" => a.opacity = 0.,
+                        "rise" => {
+                            a.y = t.height as f32 * 0.08;
+                            a.opacity = 0.;
+                        }
+                        "slide" => {
+                            a.x = -(t.width as f32) * 0.12;
+                            a.opacity = 0.;
+                        }
+                        "punch" => {
+                            a.scale = 0.85;
+                            a.opacity = 0.;
+                        }
+                        "drift" => {
+                            a.scale = 1.;
+                            b.scale = 1.08;
+                            b.frame = c.duration - 1;
+                            b.ease = "linear".into();
+                            a.ease = "linear".into();
+                        }
+                        _ => return Err("Choose none, fade, rise, slide, punch or drift".into()),
+                    }
+                    vec![a, b]
+                };
+                let inherited = c
+                    .motion
+                    .as_ref()
+                    .filter(|_| v["preserve_timing"] == true && v.get("keys").is_some());
+                c.motion = Some(Motion {
+                    origin: inherited.map_or(c.start as i64, |m| m.origin),
+                    span: inherited.map_or(c.duration, |m| m.span),
+                    keys,
+                });
+            }
+        }
         "film_clip" => {
             let id = s(v, "id")?;
             let c = t
@@ -519,6 +644,11 @@ pub fn apply(p: &mut Project, v: &Value) -> Result<(), String> {
                 c.audio.fade_out = c.audio.fade_out.min(c.duration - c.audio.fade_in);
             } else {
                 c.audio.origin += c.start as i64 - oldstart as i64;
+            }
+            if c.source_in_us == oldsource && c.duration == oldduration {
+                if let Some(m) = &mut c.motion {
+                    m.origin += c.start as i64 - oldstart as i64;
+                }
             }
             if v.get("gain_db").is_some() {
                 c.audio.gain_db = f(v, "gain_db")?;
@@ -644,6 +774,7 @@ pub fn apply(p: &mut Project, v: &Value) -> Result<(), String> {
             c.id = t.alloc();
             c.track = track;
             c.name = "Detached source audio".into();
+            c.motion = None;
             c.design = None;
             c.text = None;
             c.caption = None;
@@ -709,6 +840,7 @@ fn base(t: &mut Timeline, track: String, name: &str, start: u64, duration: u64) 
             span: duration,
         },
         caption: None,
+        motion: None,
     }
 }
 pub fn srt(t: &Timeline) -> String {

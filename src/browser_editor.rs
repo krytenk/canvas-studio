@@ -192,6 +192,7 @@ fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request
                 "/layout.js",
                 "/bundle.js",
                 "/film.js",
+                "/motion.js",
                 "/style.css",
             ]
             .contains(&path.as_str());
@@ -840,6 +841,18 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         }
         let read_project = alternate.as_ref().unwrap_or(&s.project);
         return match base {
+            "/api/film/motion-tools" => Ok(Response::value(crate::motion::doctor(), s.revision)),
+            "/api/film/source" => {
+                let id = query(&req.path, "id").ok_or("Missing job")?;
+                let p = crate::media_service::source_output(&id, &s.project.document_id)?;
+                let mut r = Response::bytes(
+                    "application/zip",
+                    fs::read(p).map_err(|e| e.to_string())?,
+                    s.revision,
+                );
+                r.download = Some("motion-source.zip");
+                Ok(r)
+            }
             "/api/film/storage" => Ok(Response::value(crate::media_service::storage(), s.revision)),
             "/api/film/jobs" => Ok(Response::value(
                 crate::media_service::jobs(&s.project.document_id)?,
@@ -869,12 +882,25 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 let id = query(&req.path, "id").ok_or("Missing job")?;
                 let path = crate::media_service::output(&id, &s.project.document_id)?;
                 let image = path.extension().is_some_and(|e| e == "png");
+                let zip = path.extension().is_some_and(|e| e == "zip");
                 let mut r = Response::bytes(
-                    if image { "image/png" } else { "video/mp4" },
+                    if zip {
+                        "application/zip"
+                    } else if image {
+                        "image/png"
+                    } else {
+                        "video/mp4"
+                    },
                     fs::read(path).map_err(|e| e.to_string())?,
                     s.revision,
                 );
-                r.download = Some(if image { "frame.png" } else { "film.mp4" });
+                r.download = Some(if zip {
+                    "motion-source.zip"
+                } else if image {
+                    "frame.png"
+                } else {
+                    "film.mp4"
+                });
                 Ok(r)
             }
             "/api/film/cache" => {
@@ -1302,6 +1328,10 @@ fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Sessi
             "/" => Some((
                 "text/html; charset=utf-8",
                 include_bytes!("../web/index.html").as_slice(),
+            )),
+            "/motion.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_bytes!("../web/motion.js").as_slice(),
             )),
             "/film.js" => Some((
                 "text/javascript; charset=utf-8",

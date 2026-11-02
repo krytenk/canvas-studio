@@ -17,6 +17,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxkbcommon-dev libwayland-dev libegl1-mesa-dev poppler-utils ffmpeg xvfb libxtst6 x11-utils libxkbcommon-x11-0 libgl1-mesa-dri libegl-mesa0 libglx-mesa0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install pinned local motion renderer
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --prefix tools/hyperframes
+          HYPERFRAMES_NO_TELEMETRY=1 HYPERFRAMES_NO_UPDATE_CHECK=1 node tools/hyperframes/node_modules/hyperframes/bin/hyperframes.mjs browser ensure
       - name: Install Rust formatting support
         run: rustup component add rustfmt
       - name: Check formatting
@@ -45,11 +52,15 @@ jobs:
         run: .ui-venv/bin/python scripts/campaign_smoke.py --binary target/release/canvas-studio --chrome chromium
       - name: Exercise media timing, audio, portable recovery and Film UI
         run: .ui-venv/bin/python scripts/media_smoke.py --binary target/release/canvas-studio --chrome chromium
+      - name: Exercise deterministic HyperFrames motion and source delivery
+        run: .ui-venv/bin/python scripts/motion_smoke.py --binary target/release/canvas-studio --chrome chromium
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: canvas-studio-ui-proofs
           path: |
+            qa/motion/motion-ui.png
+            qa/motion/report.json
             qa/media/film-ui.png
             qa/media/report.json
             qa/campaign-ui/*.png

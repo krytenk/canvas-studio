@@ -24,6 +24,21 @@ fn script() -> Result<PathBuf, String> {
             let tmp = path.with_extension(format!("{}.tmp", generate_document_id()));
             fs::write(&tmp, include_str!("../media/studio_media.py")).map_err(|e| e.to_string())?;
             fs::rename(tmp, &path).map_err(|e| e.to_string())?;
+            for (name, data) in [
+                (
+                    "studio_motion.py",
+                    include_str!("../media/studio_motion.py"),
+                ),
+                (
+                    "Noto-OFL.txt",
+                    include_str!("../assets/fonts/LICENSE-OFL.txt"),
+                ),
+            ] {
+                let dest = path.parent().unwrap().join(name);
+                let tmp = dest.with_extension(format!("{}.tmp", generate_document_id()));
+                fs::write(&tmp, data).map_err(|e| e.to_string())?;
+                fs::rename(tmp, dest).map_err(|e| e.to_string())?;
+            }
             Ok(path)
         })
         .clone()
@@ -31,13 +46,13 @@ fn script() -> Result<PathBuf, String> {
 pub fn dependencies() -> Value {
     json!({"python":Command::new("python3").arg("--version").output().is_ok_and(|p|p.status.success()),"ffmpeg":Command::new("ffmpeg").arg("-version").output().is_ok_and(|p|p.status.success()),"ffprobe":Command::new("ffprobe").arg("-version").output().is_ok_and(|p|p.status.success())})
 }
-fn write(path: &Path, value: &Value) -> Result<(), String> {
+pub(crate) fn write(path: &Path, value: &Value) -> Result<(), String> {
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, serde_json::to_vec(value).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     fs::rename(tmp, path).map_err(|e| e.to_string())
 }
-fn invoke(folder: &Path, spec: &Value) -> Result<Value, String> {
+pub(crate) fn invoke(folder: &Path, spec: &Value) -> Result<Value, String> {
     write(&folder.join("spec.json"), spec)?;
     let status = Command::new("python3")
         .arg(script()?)
@@ -82,7 +97,7 @@ fn id_path(id: &str) -> Result<PathBuf, String> {
     }
     Ok(crate::media_store::folder("jobs")?.join(id))
 }
-fn begin(
+pub(crate) fn begin(
     doc: &str,
     revision: u64,
     mode: &str,
@@ -155,6 +170,9 @@ pub fn start(
     mode: &str,
     frame: Option<u64>,
 ) -> Result<String, String> {
+    if mode == "source" || crate::timeline::has_motion(&project.production.timeline) {
+        return crate::motion::start(project, revision, mode, frame);
+    }
     if !["preview", "export", "frame"].contains(&mode) {
         return Err("Choose preview, export or frame".into());
     }
@@ -219,7 +237,7 @@ pub fn start(
         },
     )
 }
-fn render_graphic(project: &Project, c: &Clip, path: &Path) -> Result<(), String> {
+pub(crate) fn render_graphic(project: &Project, c: &Clip, path: &Path) -> Result<(), String> {
     let t = &project.production.timeline;
     let mut p = Project::default();
     p.imported_fonts = project.imported_fonts.clone();
@@ -251,6 +269,9 @@ fn render_graphic(project: &Project, c: &Clip, path: &Path) -> Result<(), String
         let ratio = (t.width as f32 / p.width).min(t.height as f32 / p.height);
         let w = (p.width * ratio).round().max(1.) as u32;
         let h = (p.height * ratio).round().max(1.) as u32;
+        if let Ok(svg) = crate::exporter::export_project_page_to_svg(&p, 0, design.transparent) {
+            let _ = fs::write(path.with_extension("svg"), svg);
+        }
         crate::exporter::render_page_to_rgba_image(
             &p.pages[0],
             p.width,
@@ -309,6 +330,9 @@ fn render_graphic(project: &Project, c: &Clip, path: &Path) -> Result<(), String
     p.production.fields = project.production.fields.clone();
     let resolved = crate::production::resolve(&p, true)?;
     check_graphic(&resolved)?;
+    if let Ok(svg) = crate::exporter::export_project_page_to_svg(&resolved, 0, true) {
+        let _ = fs::write(path.with_extension("svg"), svg);
+    }
     crate::exporter::render_page_to_rgba_image(
         &resolved.pages[0],
         p.width,
@@ -379,10 +403,12 @@ pub fn output(id: &str, doc: &str) -> Result<PathBuf, String> {
     if state["state"] != "complete" {
         return Err("The media job has not completed".into());
     }
-    if !["preview", "export", "frame"].contains(&state["mode"].as_str().unwrap_or("")) {
+    if !["preview", "export", "frame", "source"].contains(&state["mode"].as_str().unwrap_or("")) {
         return Err("This job has no movie/frame output".into());
     }
-    Ok(id_path(id)?.join(if state["mode"] == "frame" {
+    Ok(id_path(id)?.join(if state["mode"] == "source" {
+        "motion-source.zip"
+    } else if state["mode"] == "frame" {
         "frame.png"
     } else {
         "movie.mp4"
@@ -444,4 +470,16 @@ pub fn clear_finished(doc: &str) -> Result<usize, String> {
         }
     }
     Ok(count)
+}
+
+pub fn source_output(id: &str, doc: &str) -> Result<PathBuf, String> {
+    let state = status(id, doc)?;
+    if state["state"] != "complete" || state["result"]["source_available"] != true {
+        return Err("This job has no completed motion source".into());
+    }
+    let p = id_path(id)?.join("motion-source.zip");
+    if !p.is_file() {
+        return Err("Motion source is missing".into());
+    }
+    Ok(p)
 }

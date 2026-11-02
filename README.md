@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.13.0**, with imported fonts, rich paragraphs, portable
+Current development: **1.14.0**, with imported fonts, rich paragraphs, portable
 projects, linked collections/CSV production, books, checked word searches and local browser editing. An 18-design visual catalog includes editable Instagram
 carousels/stories and YouTube thumbnails/channel artwork.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
@@ -38,7 +38,9 @@ trim/split, proxies, audio gain/fades, manual captions/SRT and editable design
 overlays. Render synchronized previews and H.264/AAC MP4s as cancellable snapshot
 jobs. Originals travel in portable projects. Browser playback is integrated;
 native playback opens in ffplay. Python 3 and FFmpeg/FFprobe are required for
-media work. HyperFrames effects and Three.js remain later milestones.
+media work. Saved keyframes and a deterministic HyperFrames adapter are available in
+[Motion studio](docs/MOTION-STUDIO.md), with source ZIP/manifest delivery and
+optional pinned Node/Chromium setup. Three.js remains the next milestone.
 
 ## Design with a coding agent
 

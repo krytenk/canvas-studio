@@ -1,5 +1,13 @@
 # Changes
 
+## 1.14.0 — editable motion and HyperFrames source delivery
+
+- Added typed per-clip position, scale, rotation and opacity keyframes, cubic/linear/hold easing, presets and browser/native key controls. Splits and trims retain the animation clock; movement moves it with the clip.
+- Added a local HyperFrames 0.8.206 adapter with deterministic frame seeking, native SVG/PNG artwork, frame-normalized video, the existing audio mix, runtime checks and cancellable snapshot jobs. Frame review prepares visible content only.
+- Added source ZIP delivery containing readable HTML scenes, editable native master/originals, local media, dependency lockfile, font license and a renderer/input/version/hash manifest. External HTML edits do not round-trip into the native model.
+- Motion projects use a guarded version-4 envelope; existing static, campaign and film files remain supported. MCP retains 13 tools with typed motion edits and source-job delivery.
+- Added a pinned optional setup helper (Node 22+, FFmpeg/Chromium), repeated-render/split-frame equivalence, source-hash, audio-sync, cancellation and UI checks. Three.js, automatic transcription and public hosting remain future work.
+
 ## 1.13.0 — film, sound and captions
 
 - Added a persisted frame-based multi-track timeline with verified local originals, disposable proxies/posters/waveforms, trim/split, source audio detachment, gain/fades, manual captions/SRT and native editable design overlays.

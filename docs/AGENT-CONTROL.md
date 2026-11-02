@@ -178,3 +178,13 @@ The adapter now exposes **13 tools**. Media import uses `studio_import` with
 reports progress, cancels or saves the completed result inside the workspace.
 See [Film studio](FILM-STUDIO.md) for timing units, exact commands, controls,
 resource limits and the offline media acceptance/demo scripts.
+
+## 1.14 motion/source commands
+
+`studio_edit` adds `film_motion` with `id` and a `preset` or ordered `keys`
+(frame, x, y, scale, rotation, opacity, ease). `preserve_timing: true` retains
+the original animation clock on split clips. `studio_media_render` mode `source`
+creates a full-resolution source bundle; `studio_media_job` operation `source`
+saves a completed motion preview/export's bundle. Existing guards and workspace
+boundaries apply. See [Motion studio](MOTION-STUDIO.md) for dependencies, source
+editability, units and the version-4 feature guard.

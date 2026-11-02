@@ -87,8 +87,13 @@ fn save_mode(project: &Project, path: &Path, embed: bool) -> Result<(), String> 
     if project.production.timeline.active() {
         features.push("video-timeline-v1".into());
     }
+    if crate::timeline::has_motion(&project.production.timeline) {
+        features.push("motion-keyframes-v1".into());
+    }
     let envelope = Envelope {
-        version: if project.production.timeline.active() {
+        version: if crate::timeline::has_motion(&project.production.timeline) {
+            4
+        } else if project.production.timeline.active() {
             3
         } else if project.production.studio.active() {
             2
@@ -155,12 +160,11 @@ pub fn load(path: &Path) -> Result<Project, String> {
         return Err("Unpacked project exceeds the size limit".into());
     }
     let envelope: Envelope = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if ![1, 2, 3].contains(&envelope.version)
+    if ![1, 2, 3, 4].contains(&envelope.version)
         || envelope.assets.len() > 10_000
-        || envelope
-            .required_features
-            .iter()
-            .any(|f| f != "studio-campaign-v1" && f != "video-timeline-v1")
+        || envelope.required_features.iter().any(|f| {
+            f != "studio-campaign-v1" && f != "video-timeline-v1" && f != "motion-keyframes-v1"
+        })
         || (envelope.version >= 2 && envelope.required_features.is_empty())
     {
         return Err("Unsupported portable project version or asset count".into());
@@ -190,13 +194,22 @@ pub fn load(path: &Path) -> Result<Project, String> {
     fs::write(&manifest, envelope.project).map_err(|e| e.to_string())?;
     let project = crate::exporter::load_project_json(&manifest)?;
     if project.production.timeline.active()
-        && (envelope.version != 3
+        && (envelope.version < 3
             || !envelope
                 .required_features
                 .iter()
                 .any(|f| f == "video-timeline-v1"))
     {
         return Err("Film project requires version 3 and video-timeline-v1 support".into());
+    }
+    if crate::timeline::has_motion(&project.production.timeline)
+        && (envelope.version != 4
+            || !envelope
+                .required_features
+                .iter()
+                .any(|f| f == "motion-keyframes-v1"))
+    {
+        return Err("Motion projects require motion-keyframes-v1 support".into());
     }
     if !envelope.linked_media {
         for a in project.production.timeline.assets.values() {

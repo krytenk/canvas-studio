@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Bounded local FFmpeg worker. Receives only app-owned job specs; never a shell."""
-import argparse,hashlib,json,math,os,shutil,signal,subprocess,time
+import argparse,hashlib,json,math,os,shutil,signal,subprocess,time,sys
+sys.modules.setdefault("studio_media",sys.modules[__name__])
 from pathlib import Path
 MAX_FILE=128*1024*1024
 FORMATS={'.mp4':'mov','.m4v':'mov','.mov':'mov','.m4a':'mov','.webm':'matroska','.mkv':'matroska','.wav':'wav','.mp3':'mp3','.flac':'flac','.ogg':'ogg','.png':'image2','.jpg':'image2','.jpeg':'image2','.webp':'image2'}
@@ -114,9 +115,13 @@ class Worker:
                 filters.append(f'[{index}:a:0]asetpts=PTS-STARTPTS,aresample=48000,atrim=start_sample={source_offset*48000//fps}:end_sample={(source_offset+length)*48000//fps},asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo,aeval=exprs=\'val(0)*{env}|val(1)*{env}\':c=stereo,adelay=delays={start*48000//fps}S:all=1,apad=whole_len={total*48000//fps},atrim=end_sample={total*48000//fps}[{label}a]');streams.append(label+'a')
             index+=1
         if frame is None:filters.append(''.join('['+a+']' for a in streams)+f'amix=inputs={len(streams)}:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=0:latency=1[aout]')
-        script=self.folder/'filters.txt';script.write_text(';\n'.join(filters));args+=['-filter_complex_script',str(script),'-map',f'[{current}]']
+        if s.get('audio_only'):filters.append(f'[{current}]nullsink')
+        script=self.folder/'filters.txt';script.write_text(';\n'.join(filters));args+=['-filter_complex_script',str(script)]
+        if not s.get('audio_only'):args+=['-map',f'[{current}]']
         output=Path(s['output'])
-        if frame is not None:
+        if s.get('audio_only'):
+            tmp=output.with_suffix('.partial.wav');args+=['-map','[aout]','-c:a','pcm_s16le','-ar','48000','-t',f'{seconds:.9f}',str(tmp)]
+        elif frame is not None:
             tmp=output.with_suffix('.partial.png');args+=['-frames:v','1','-update','1',str(tmp)]
         else:
             tmp=Path(str(output)+'.partial.mp4');args+=['-map','[aout]','-frames:v',str(total),'-t',f'{seconds:.9f}','-r',str(fps),'-c:v','libx264','-preset','veryfast','-crf','25' if preview else '20','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k','-ar','48000','-movflags','+faststart',str(tmp)]
@@ -132,6 +137,9 @@ class Worker:
             if self.spec['op']=='probe':result=probe(Path(self.spec['source']),self.spec['extension'],self.spec['name'])
             elif self.spec['op']=='proxy':result=self.proxy()
             elif self.spec['op']=='render':result=self.render()
+            elif self.spec['op']=='motion':
+                import studio_motion
+                result=studio_motion.run(self)
             else:raise ValueError('Unknown media operation')
             atomic(self.result,dict(state='complete',result=result))
         except Cancelled:atomic(self.result,dict(state='cancelled',error='Operation cancelled; source project preserved'))

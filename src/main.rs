@@ -20,6 +20,9 @@ mod media_service;
 mod media_store;
 mod media_ui;
 mod model;
+mod motion;
+#[cfg(test)]
+mod motion_tests;
 mod paragraph_layout;
 #[cfg(test)]
 mod print_studio_tests;
