@@ -13,6 +13,7 @@ pub struct PositionedGlyph {
     pub y_baseline: f32,
     pub advance: f32,
     pub used_fallback: bool,
+    pub underline_override: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -25,6 +26,23 @@ pub struct TextLineLayout {
     pub width: f32,
     pub height: f32,
     pub glyphs: Vec<PositionedGlyph>,
+}
+
+pub fn underline_spans(line: &TextLineLayout, fallback: bool) -> Vec<(f32, f32)> {
+    let mut spans = Vec::new();
+    let mut current = None;
+    for glyph in &line.glyphs {
+        if glyph.underline_override.unwrap_or(fallback) {
+            let start = current.map(|(start, _)| start).unwrap_or(glyph.x);
+            current = Some((start, glyph.x + glyph.advance));
+        } else if let Some(span) = current.take() {
+            spans.push(span);
+        }
+    }
+    if let Some(span) = current {
+        spans.push(span);
+    }
+    spans
 }
 
 #[derive(Clone, Debug)]
@@ -135,6 +153,7 @@ pub fn layout_text_block(
                         y_baseline: 0.0,
                         advance: adv,
                         used_fallback: used_fb,
+                        underline_override: None,
                     });
                     cursor_x += adv;
                     prev_gid = Some((face_id, gid));
@@ -435,25 +454,24 @@ pub fn rasterize_text_layout(
             }
         }
 
-        if underline && line.width > 0.5 {
+        for (start, end) in underline_spans(line, underline) {
             let uy = origin_y + (line.y_baseline + layout.font_size * 0.12) * scale_y;
-            let x0 = origin_x + line.x_offset * scale_x;
-            let x1 = origin_x + (line.x_offset + line.width) * scale_x;
-            let thickness = (layout.font_size * 0.065 * scale_y).max(1.0);
+            let x0 = origin_x + start * scale_x;
+            let x1 = origin_x + end * scale_x;
+            let thickness = (layout.font_size * 0.065 * scale_y).max(1.);
             let steps = ((x1 - x0).abs().ceil() as i32).max(1);
-            let a = (eff_alpha * 255.0).round() as u8;
             for s in 0..=steps {
-                let px = x0 + (s as f32 / steps as f32) * (x1 - x0);
-                for ty_off in 0..(thickness.ceil() as i32) {
-                    let (tx, ty) = transform_pt(px, uy + ty_off as f32);
-                    let ix = tx.round() as i32;
-                    let iy = ty.round() as i32;
-                    if ix >= 0 && iy >= 0 && (ix as u32) < img_w && (iy as u32) < img_h {
+                for offset in 0..thickness.ceil() as i32 {
+                    let (x, y) = transform_pt(
+                        x0 + (s as f32 / steps as f32) * (x1 - x0),
+                        uy + offset as f32,
+                    );
+                    if x >= 0. && y >= 0. && x < img_w as f32 && y < img_h as f32 {
                         blend_rgba_pixel(
                             img,
-                            ix as u32,
-                            iy as u32,
-                            [color[0], color[1], color[2], a],
+                            x as u32,
+                            y as u32,
+                            [color[0], color[1], color[2], (eff_alpha * 255.) as u8],
                         );
                     }
                 }

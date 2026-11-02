@@ -109,6 +109,17 @@ pub fn transform_selection(
 }
 
 pub fn scale_element(element: &mut CanvasElement, scale: f32) {
+    for value in [
+        &mut element.text_format.space_before,
+        &mut element.text_format.space_after,
+        &mut element.text_format.first_line_indent,
+        &mut element.text_format.inset_left,
+        &mut element.text_format.inset_right,
+        &mut element.text_format.inset_top,
+        &mut element.text_format.inset_bottom,
+    ] {
+        *value *= scale;
+    }
     element.width *= scale;
     element.height *= scale;
     element.shadow.offset_x *= scale;

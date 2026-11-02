@@ -111,3 +111,208 @@ fn broken_or_missing_fonts_are_not_silently_replaced_and_legacy_files_still_open
     corrupt.imported_fonts[0].id += 1;
     assert!(imported_fonts::register_project(&corrupt).is_err());
 }
+
+#[test]
+fn unicode_character_styles_wrap_and_follow_edits() {
+    use crate::model::{TextFormatting, TextRun};
+    let mut format = TextFormatting {
+        space_before: 4.,
+        space_after: 12.,
+        first_line_indent: 14.,
+        inset_left: 8.,
+        inset_right: 8.,
+        inset_top: 6.,
+        inset_bottom: 6.,
+        ..Default::default()
+    };
+    format.runs.push(TextRun {
+        start: 3,
+        end: 4,
+        bold: Some(true),
+        underline: Some(true),
+        ..Default::default()
+    });
+    let layout = crate::paragraph_layout::layout_formatted(
+        "groß café\nAnother paragraph",
+        FontFamily::Sans,
+        20.,
+        false,
+        false,
+        true,
+        TextAlign::Left,
+        0.,
+        1.4,
+        ListStyle::None,
+        160.,
+        350.,
+        &format,
+    );
+    let glyphs: Vec<_> = layout.lines.iter().flat_map(|l| &l.glyphs).collect();
+    let bold: Vec<_> = glyphs
+        .iter()
+        .filter(|g| g.face_id.is_bold())
+        .map(|g| g.ch)
+        .collect();
+    assert_eq!(bold, vec!['S', 'S']);
+    assert!(glyphs
+        .iter()
+        .filter(|g| g.face_id.is_bold())
+        .all(|g| g.underline_override == Some(true)));
+    assert!(!layout.is_overflowing());
+    assert!((layout.lines[0].x_offset - 22.).abs() < 0.01);
+    let mut edited = TextFormatting::default();
+    edited.runs.push(TextRun {
+        start: 5,
+        end: 9,
+        bold: Some(true),
+        ..Default::default()
+    });
+    edited.reconcile_edit("Café bold", "Dear Café bold");
+    assert_eq!((edited.runs[0].start, edited.runs[0].end), (10, 14));
+    edited.reconcile_edit("Dear Café bold", "Dear Café ");
+    assert!(edited.runs.is_empty());
+}
+
+#[test]
+fn rich_paragraph_proof_round_trips_and_matches_independent_pdf_layout() {
+    use crate::model::{TextFormatting, TextRun};
+    let root = std::env::current_dir().unwrap().join("qa/typography-proof");
+    fs::create_dir_all(&root).unwrap();
+    let mut project = font_project();
+    let content="A thoughtfully designed gathering brings people together. The invitation sets the tone, while clear information helps every guest feel welcome.\nGood typography creates a comfortable rhythm. Paragraph spacing, a considered first-line indent and generous frame insets give the words room to breathe.\nKeep the editable master, make a fresh working copy, and proof the complete collection before printing.";
+    let element = &mut project.pages[0].elements[0];
+    element.y = 150.;
+    element.width = 650.;
+    element.height = 800.;
+    if let ElementKind::Text {
+        content: text,
+        font_family,
+        font_size,
+        bold,
+        align,
+        line_height,
+        ..
+    } = &mut element.kind
+    {
+        *text = content.into();
+        *font_family = FontFamily::Sans;
+        *font_size = 23.;
+        *bold = false;
+        *align = TextAlign::Left;
+        *line_height = 1.5;
+    }
+    element.text_format = TextFormatting {
+        space_after: 18.,
+        first_line_indent: 20.,
+        inset_left: 16.,
+        inset_right: 16.,
+        inset_top: 12.,
+        inset_bottom: 12.,
+        ..Default::default()
+    };
+    let start = content[..content.find("thoughtfully").unwrap()]
+        .chars()
+        .count();
+    element.text_format.runs.push(TextRun {
+        start,
+        end: start + 12,
+        bold: Some(true),
+        ..Default::default()
+    });
+    let start = content[..content.find("comfortable rhythm").unwrap()]
+        .chars()
+        .count();
+    element.text_format.runs.push(TextRun {
+        start,
+        end: start + 18,
+        italic: Some(true),
+        underline: Some(true),
+        ..Default::default()
+    });
+    let start = content[..content.find("editable master").unwrap()]
+        .chars()
+        .count();
+    element.text_format.runs.push(TextRun {
+        start,
+        end: start + 15,
+        font_family: Some(FontFamily::Imported(project.imported_fonts[0].id)),
+        ..Default::default()
+    });
+    let mut heading = element.clone();
+    heading.id = project.alloc_id();
+    heading.y = 55.;
+    heading.height = 80.;
+    heading.text_format = Default::default();
+    if let ElementKind::Text {
+        content,
+        font_family,
+        font_size,
+        ..
+    } = &mut heading.kind
+    {
+        *content = "A thoughtful gathering".into();
+        *font_family = FontFamily::DisplaySerif;
+        *font_size = 42.;
+    }
+    project.pages[0].elements.push(heading);
+    let path = root.join("paragraphs.canvas.json");
+    save_project_json(&project, &path).unwrap();
+    let project = load_project_json(&path).unwrap();
+    assert!(!run_export_preflight(&project, 150).has_errors());
+    let png = render_project_page_at_dpi(&project, 0, 150, false).unwrap();
+    png.save(root.join("paragraphs.png")).unwrap();
+    let pdf = root.join("paragraphs.pdf");
+    export_project_to_pdf(
+        &project,
+        &PdfExportOptions {
+            target_image_dpi: 150,
+            ..Default::default()
+        },
+        &pdf,
+    )
+    .unwrap();
+    fs::write(
+        root.join("paragraphs.svg"),
+        export_page_to_svg(&project.pages[0], project.width, project.height, false).unwrap(),
+    )
+    .unwrap();
+    let text = Command::new("pdftotext")
+        .arg(&pdf)
+        .arg("-")
+        .output()
+        .unwrap();
+    let extracted = String::from_utf8(text.stdout).unwrap();
+    for phrase in ["thoughtfully", "comfortable rhythm", "editable master"] {
+        assert!(extracted.contains(phrase), "{extracted}");
+    }
+    let render = Command::new("pdftoppm")
+        .args(["-r", "150", "-singlefile", "-png"])
+        .arg(&pdf)
+        .arg(root.join("paragraphs-pdf"))
+        .output()
+        .unwrap();
+    assert!(render.status.success());
+    let independent = image::open(root.join("paragraphs-pdf.png"))
+        .unwrap()
+        .to_rgba8();
+    let ink_bounds = |img: &image::RgbaImage| {
+        let mut bounds = (u32::MAX, u32::MAX, 0, 0);
+        for (x, y, pixel) in img.enumerate_pixels() {
+            if pixel.0[..3].iter().map(|c| *c as u32).sum::<u32>() < 500 {
+                bounds.0 = bounds.0.min(x);
+                bounds.1 = bounds.1.min(y);
+                bounds.2 = bounds.2.max(x);
+                bounds.3 = bounds.3.max(y);
+            }
+        }
+        bounds
+    };
+    let a = ink_bounds(&png);
+    let b = ink_bounds(&independent);
+    for (a, b) in [a.0, a.1, a.2, a.3].into_iter().zip([b.0, b.1, b.2, b.3]) {
+        assert!(
+            a.abs_diff(b) <= 6,
+            "independent PDF and raster text bounds differ: {a} vs {b}"
+        );
+    }
+}

@@ -6,6 +6,7 @@ mod imported_fonts;
 mod library_tests;
 mod magic_studio;
 mod model;
+mod paragraph_layout;
 mod template_library;
 mod templates;
 #[cfg(test)]
@@ -1246,6 +1247,7 @@ impl CanvasStudioApp {
                         shadow: DropShadow::default(),
                         animation: ElementAnimation::Fade,
                         group_id: None,
+                        text_format: Default::default(),
                         kind: ElementKind::Image {
                             source_name: fname.clone(),
                             width_px: w,
@@ -2196,11 +2198,10 @@ impl CanvasStudioApp {
                                                 }
                                             });
 
-                                        ui.add(
-                                            egui::TextEdit::singleline(content)
-                                                .desired_width(170.0)
-                                                .hint_text("Edit text..."),
-                                        );
+                                        let before=content.clone();
+                                        if ui.add(egui::TextEdit::singleline(&mut *content).desired_width(170.).hint_text("Edit text...")).changed() {
+                                            el.text_format.reconcile_edit(&before,content);
+                                        }
                                     }
                                     ElementKind::Image {
                                         width_px,
@@ -2678,6 +2679,7 @@ impl CanvasStudioApp {
                             },
                             animation: ElementAnimation::Pop,
                             group_id: None,
+                            text_format: Default::default(),
                             kind: ElementKind::Shape {
                                 shape_type: *st,
                                 fill: FillStyle::Solid(col),
@@ -2876,6 +2878,7 @@ impl CanvasStudioApp {
                 shadow: DropShadow::default(),
                 animation: ElementAnimation::Fade,
                 group_id: None,
+                text_format: Default::default(),
                 kind: ElementKind::Text {
                     content: content.to_string(),
                     font_family,
@@ -3253,6 +3256,7 @@ impl CanvasStudioApp {
                         shadow: DropShadow::default(),
                         animation: ElementAnimation::Rise,
                         group_id: None,
+                        text_format: Default::default(),
                         kind: ElementKind::Chart {
                             chart_type: *ct,
                             title: "Quarterly Growth Metrics".to_string(),
@@ -3310,6 +3314,7 @@ impl CanvasStudioApp {
                     shadow: DropShadow::default(),
                     animation: ElementAnimation::Fade,
                     group_id: None,
+                    text_format: Default::default(),
                     kind: ElementKind::Table {
                         rows: 3,
                         cols: 3,
@@ -3457,6 +3462,17 @@ impl CanvasStudioApp {
     }
 
     fn render_selected_typography(&mut self, ui: &mut Ui) {
+        let font_choices: Vec<_> = FontFamily::all()
+            .iter()
+            .map(|f| (*f, f.label()))
+            .chain(
+                self.project
+                    .imported_fonts
+                    .iter()
+                    .map(|f| (FontFamily::Imported(f.id), f.name.clone())),
+            )
+            .collect();
+        let selected_range = self.canvas_state.text_selection;
         let units = self.project.effective_units_per_inch();
         let Some(id) = self.selected_id else {
             return;
@@ -3526,8 +3542,95 @@ impl CanvasStudioApp {
                     ui.label("Text colour");
                     color_Edit_button(ui, color);
                 });
+                ui.separator();
+                ui.strong("Paragraph spacing & frame insets (pt)");
+                egui::Grid::new("paragraph-values")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        for (label, value) in [
+                            ("Before paragraph", &mut element.text_format.space_before),
+                            ("After paragraph", &mut element.text_format.space_after),
+                            (
+                                "First line indent",
+                                &mut element.text_format.first_line_indent,
+                            ),
+                            ("Left inset", &mut element.text_format.inset_left),
+                            ("Right inset", &mut element.text_format.inset_right),
+                            ("Top inset", &mut element.text_format.inset_top),
+                            ("Bottom inset", &mut element.text_format.inset_bottom),
+                        ] {
+                            let mut points = *value * 72. / units;
+                            ui.label(label);
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut points)
+                                        .range(0.0..=500.0)
+                                        .speed(0.25),
+                                )
+                                .changed()
+                            {
+                                *value = points * units / 72.;
+                            }
+                            ui.end_row();
+                        }
+                    });
+                if let Some((id, start, end)) =
+                    selected_range.filter(|(id, start, end)| *id == element.id && start < end)
+                {
+                    let _ = id;
+                    ui.label(format!("Selected characters {}–{}", start + 1, end));
+                    ui.horizontal(|ui| {
+                        for (label, b, i, u) in [
+                            ("Bold", Some(true), None, None),
+                            ("Italic", None, Some(true), None),
+                            ("Underline", None, None, Some(true)),
+                            ("Regular", Some(false), Some(false), Some(false)),
+                        ] {
+                            if ui.button(label).clicked() {
+                                element.text_format.apply_run(
+                                    crate::model::TextRun {
+                                        start,
+                                        end,
+                                        bold: b,
+                                        italic: i,
+                                        underline: u,
+                                        font_family: None,
+                                    },
+                                    content.chars().count(),
+                                );
+                            }
+                        }
+                    });
+                    egui::ComboBox::from_id_salt("character-font")
+                        .selected_text("Apply font to selection")
+                        .show_ui(ui, |ui| {
+                            for (family, name) in &font_choices {
+                                if ui.button(name).clicked() {
+                                    element.text_format.apply_run(
+                                        crate::model::TextRun {
+                                            start,
+                                            end,
+                                            font_family: Some(*family),
+                                            ..Default::default()
+                                        },
+                                        content.chars().count(),
+                                    );
+                                }
+                            }
+                        });
+                } else {
+                    ui.label(
+                        "Double-click the canvas text and select characters to apply emphasis.",
+                    );
+                }
             });
-            let layout = crate::model::text_layout::layout_text_block(
+            if ui
+                .add_enabled(!element.locked, egui::Button::new("Clear character styles"))
+                .clicked()
+            {
+                element.text_format.runs.clear();
+            }
+            let layout = crate::paragraph_layout::layout_formatted(
                 content,
                 *font_family,
                 *font_size,
@@ -3540,6 +3643,7 @@ impl CanvasStudioApp {
                 *list_style,
                 element.width,
                 element.height,
+                &element.text_format,
             );
             if layout.is_overflowing() {
                 ui.colored_label(
@@ -4448,6 +4552,7 @@ mod tests {
             shadow: DropShadow::default(),
             animation: ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(rgba(0, 0, 0, 0)),
@@ -4488,6 +4593,7 @@ mod tests {
             shadow: DropShadow::default(),
             animation: ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(rgb(20, 20, 20)),
@@ -4526,6 +4632,7 @@ mod tests {
             shadow: DropShadow::default(),
             animation: ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Image {
                 source_name: "blue.png".to_string(),
                 width_px: 64,
@@ -4610,6 +4717,7 @@ mod tests {
             shadow: DropShadow::default(),
             animation: ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(rgb(0, 0, 0)),
@@ -4634,6 +4742,7 @@ mod tests {
             shadow: DropShadow::default(),
             animation: ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Text {
                 content: "THE WEDDING TIMES • Chloé & José".to_string(),
                 font_family: FontFamily::DisplaySerif,
@@ -4692,6 +4801,7 @@ mod tests {
             shadow: DropShadow::default(),
             animation: ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Image {
                 source_name: "photo.png".to_string(),
                 width_px: 400,
@@ -4720,6 +4830,7 @@ mod tests {
             shadow: DropShadow::default(),
             animation: ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Text {
                 content: "Initial".to_string(),
                 font_family: FontFamily::Sans,
@@ -4946,6 +5057,7 @@ mod tests {
             shadow: DropShadow::default(),
             animation: ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(rgb(0, 196, 204)),

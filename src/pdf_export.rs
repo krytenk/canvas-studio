@@ -11,7 +11,7 @@ use crate::model::font_registry::{FontFaceId, FontRegistry};
 use crate::model::render_scene::{
     build_page_scene, mask_coverage, ImagePlacement, LocalToPageTransform, SceneItem,
 };
-use crate::model::text_layout::{layout_text_block, TextLayoutResult};
+use crate::model::text_layout::TextLayoutResult;
 use crate::model::{
     rgba, CanvasPage, ColorRgba, ElementKind, FillStyle, ImageAdjustments, ImageMask,
     PageBackground, Project, ShapeType,
@@ -154,7 +154,7 @@ pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightRepo
                     list_style,
                     ..
                 } => {
-                    let layout = layout_text_block(
+                    let layout = crate::paragraph_layout::layout_formatted(
                         content,
                         *font_family,
                         *font_size,
@@ -167,6 +167,7 @@ pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightRepo
                         *list_style,
                         element.width,
                         element.height,
+                        &element.text_format,
                     );
                     if layout
                         .lines
@@ -516,6 +517,7 @@ fn build_pdf_page_stream(
             shadow: Default::default(),
             animation: crate::model::ElementAnimation::None,
             group_id: None,
+            text_format: Default::default(),
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(bg),
@@ -1249,22 +1251,22 @@ fn emit_pdf_text<FX, FY>(
             let (x, y) = tf.local_to_page(glyph.x, glyph.y_baseline);
             let _=writeln!(out,"BT /{name} {font_size_pt:.5} Tf {a:.6} {b:.6} {c:.6} {d:.6} {:.5} {:.5} Tm <{code:04X}> Tj ET",to_pdf_x(x),to_pdf_y(y));
         }
-        if underline && line.width > 0.5 {
-            let uy = line.y_baseline + (layout.font_size * 0.11).max(1.2);
-            let (ux0, uy0) = tf.local_to_page(line.x_offset, uy);
-            let (ux1, uy1) = tf.local_to_page(line.x_offset + line.width, uy);
+        for (start, end) in crate::model::text_layout::underline_spans(line, underline) {
+            let uy = line.y_baseline + layout.font_size * 0.12;
+            let (x0, y0) = tf.local_to_page(start, uy);
+            let (x1, y1) = tf.local_to_page(end, uy);
             let sw = (layout.font_size * 0.06 * sy).max(0.5);
             let _ = writeln!(
                 out,
                 "{:.4} {:.4} {:.4} RG {:.3} w {:.3} {:.3} m {:.3} {:.3} l S",
-                color[0] as f32 / 255.0,
-                color[1] as f32 / 255.0,
-                color[2] as f32 / 255.0,
+                color[0] as f32 / 255.,
+                color[1] as f32 / 255.,
+                color[2] as f32 / 255.,
                 sw,
-                to_pdf_x(ux0),
-                to_pdf_y(uy0),
-                to_pdf_x(ux1),
-                to_pdf_y(uy1)
+                to_pdf_x(x0),
+                to_pdf_y(y0),
+                to_pdf_x(x1),
+                to_pdf_y(y1)
             );
         }
     }

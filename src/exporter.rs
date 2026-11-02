@@ -34,24 +34,30 @@ pub fn export_page_to_svg(
     project.height_mm = height / 96. * 25.4;
     project.pages = vec![page.clone()];
     for element in &page.elements {
-        if let ElementKind::Text {
-            font_family: crate::model::FontFamily::Imported(id),
-            ..
-        } = &element.kind
-        {
-            if let Some(face) = crate::model::font_registry::FontRegistry::global()
-                .get(crate::model::font_registry::FontFaceId::Imported(*id))
-            {
-                if !project.imported_fonts.iter().any(|f| f.id == *id) {
-                    project
-                        .imported_fonts
-                        .push(crate::imported_fonts::ImportedFont {
-                            id: *id,
-                            name: face.id.postscript_name(),
-                            bold: face.bold,
-                            italic: face.italic,
-                            bytes: face.bytes.clone(),
-                        });
+        if let ElementKind::Text { font_family, .. } = &element.kind {
+            for family in std::iter::once(*font_family).chain(
+                element
+                    .text_format
+                    .runs
+                    .iter()
+                    .filter_map(|r| r.font_family),
+            ) {
+                if let crate::model::FontFamily::Imported(id) = family {
+                    if let Some(face) = crate::model::font_registry::FontRegistry::global()
+                        .get(crate::model::font_registry::FontFaceId::Imported(id))
+                    {
+                        if !project.imported_fonts.iter().any(|f| f.id == id) {
+                            project
+                                .imported_fonts
+                                .push(crate::imported_fonts::ImportedFont {
+                                    id,
+                                    name: face.id.postscript_name(),
+                                    bold: face.bold,
+                                    italic: face.italic,
+                                    bytes: face.bytes.clone(),
+                                });
+                        }
+                    }
                 }
             }
         }
@@ -300,14 +306,9 @@ fn render_page_svg(page: &CanvasPage, width: f32, height: f32, transparent_bg: b
                 }
 
                 let fill_attr = svg_fill_attr(*color);
-                let deco = if *underline {
-                    " text-decoration=\"underline\""
-                } else {
-                    ""
-                };
                 for line in &layout.lines {
                     svg.push_str(&format!(
-                        r#"  <text aria-label="{}" font-size="{:.4}"{deco} {fill_attr}>"#,
+                        r#"  <text aria-label="{}" font-size="{:.4}" {fill_attr}>"#,
                         xml_escape(&line.text),
                         layout.font_size
                     ));
@@ -315,6 +316,16 @@ fn render_page_svg(page: &CanvasPage, width: f32, height: f32, transparent_bg: b
                         svg.push_str(&format!(r#"<tspan x="{:.4}" y="{:.4}" font-family="{}" font-weight="{}" font-style="{}">{}</tspan>"#,transform.x+glyph.x,transform.y+glyph.y_baseline,glyph.face_id.postscript_name(),if glyph.face_id.is_bold(){"bold"}else{"normal"},if glyph.face_id.is_italic(){"italic"}else{"normal"},xml_escape(&glyph.ch.to_string())));
                     }
                     svg.push_str("</text>\n");
+                    for (start, end) in crate::model::text_layout::underline_spans(line, *underline)
+                    {
+                        let y = transform.y + line.y_baseline + layout.font_size * 0.12;
+                        svg.push_str(&format!(
+                            "<line x1=\"{}\" y1=\"{y}\" x2=\"{}\" y2=\"{y}\" {}/>\n",
+                            transform.x + start,
+                            transform.x + end,
+                            svg_stroke_attr(*color, layout.font_size * 0.06)
+                        ));
+                    }
                 }
 
                 svg.push_str("</g>\n");

@@ -33,6 +33,7 @@ fn element(kind: ElementKind) -> CanvasElement {
         shadow: Default::default(),
         animation: ElementAnimation::None,
         group_id: None,
+        text_format: Default::default(),
         kind,
     }
 }

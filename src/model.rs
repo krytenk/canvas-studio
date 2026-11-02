@@ -746,6 +746,101 @@ pub enum ElementKind {
     },
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TextRun {
+    pub start: usize,
+    pub end: usize,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
+    pub underline: Option<bool>,
+    pub font_family: Option<FontFamily>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TextFormatting {
+    pub space_before: f32,
+    pub space_after: f32,
+    pub first_line_indent: f32,
+    pub inset_left: f32,
+    pub inset_right: f32,
+    pub inset_top: f32,
+    pub inset_bottom: f32,
+    pub runs: Vec<TextRun>,
+}
+
+impl TextFormatting {
+    pub fn validate(&self, content: &str) -> Result<(), String> {
+        let values = [
+            self.space_before,
+            self.space_after,
+            self.first_line_indent,
+            self.inset_left,
+            self.inset_right,
+            self.inset_top,
+            self.inset_bottom,
+        ];
+        if values
+            .iter()
+            .any(|v| !v.is_finite() || *v < 0. || *v > 100_000.)
+        {
+            return Err("Paragraph spacing and insets must be finite non-negative values".into());
+        }
+        let count = content.chars().count();
+        if self.runs.iter().any(|r| r.start >= r.end || r.end > count) {
+            return Err("A character style range is outside its text".into());
+        }
+        Ok(())
+    }
+
+    pub fn apply_run(&mut self, mut run: TextRun, count: usize) {
+        run.start = run.start.min(count);
+        run.end = run.end.min(count);
+        if run.start < run.end {
+            self.runs.push(run);
+        }
+    }
+
+    pub fn reconcile_edit(&mut self, old: &str, new: &str) {
+        let a: Vec<_> = old.chars().collect();
+        let b: Vec<_> = new.chars().collect();
+        let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+        let suffix = a[prefix..]
+            .iter()
+            .rev()
+            .zip(b[prefix..].iter().rev())
+            .take_while(|(x, y)| x == y)
+            .count();
+        let end = a.len() - suffix;
+        let inserted = b.len() - prefix - suffix;
+        let shift = |v: usize| {
+            ((v as isize) + (inserted as isize) - (end - prefix) as isize).max(0) as usize
+        };
+        for run in &mut self.runs {
+            if run.end <= prefix {
+                continue;
+            }
+            if run.start >= end {
+                run.start = shift(run.start);
+                run.end = shift(run.end);
+            } else {
+                if run.start >= prefix {
+                    run.start = prefix;
+                }
+                run.end = if run.end >= end {
+                    shift(run.end)
+                } else {
+                    prefix + inserted
+                };
+            }
+            run.start = run.start.min(b.len());
+            run.end = run.end.min(b.len());
+        }
+        self.runs.retain(|r| r.start < r.end);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CanvasElement {
     pub id: u64,
@@ -763,6 +858,8 @@ pub struct CanvasElement {
     pub shadow: DropShadow,
     pub animation: ElementAnimation,
     pub group_id: Option<u64>,
+    #[serde(default)]
+    pub text_format: TextFormatting,
     pub kind: ElementKind,
 }
 
@@ -784,6 +881,7 @@ impl CanvasElement {
             shadow: self.shadow,
             animation: self.animation,
             group_id: self.group_id,
+            text_format: self.text_format.clone(),
             kind,
         }
     }

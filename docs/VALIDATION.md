@@ -1,5 +1,13 @@
 # Canvas Studio validation
 
+## 1.4.0 local validation
+
+43 release tests passed, including styled Unicode wrapping, uppercase expansion,
+character-range adjustment after editing and rich-paragraph save/reopen/export.
+The paragraph PDF was independently rendered with Poppler and visually inspected;
+its raster ink bounds matched the native raster proof within six pixels at 150 DPI.
+The existing legacy document and export checks continue to pass.
+
 ## 1.3.0 local validation
 
 41 release tests, formatting and the release build passed on 1 November 2026.

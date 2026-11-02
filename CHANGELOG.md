@@ -1,5 +1,13 @@
 # Changes
 
+## 1.4.0 — paragraph layout and character emphasis
+
+- Added before/after paragraph spacing, first-line indentation and four text-frame insets in points.
+- Select characters in the canvas editor to apply bold, italic, underline or an actual font face in Typography; clear character styles to return to the frame defaults.
+- Unicode character ranges follow ordinary text insertion/deletion. Uppercase expansion and wrapping preserve the original style mapping.
+- Preview, raster, SVG and PDF use the same formatted text layout, including continuous underline spans. Old documents keep their existing layout when paragraph formatting is unset.
+- Added mixed-style Unicode/editing and independently rendered paragraph proofs to the regression suite.
+
 ## 1.3.0 — portable imported TrueType fonts
 
 - Import individual static TrueType faces, select their actual weight/style, and embed their bytes in editable projects and personal masters.

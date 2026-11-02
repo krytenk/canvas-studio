@@ -107,6 +107,7 @@ fn make_shape(
         },
         animation: ElementAnimation::Rise,
         group_id: None,
+        text_format: Default::default(),
         kind: ElementKind::Shape {
             shape_type,
             fill,
@@ -149,6 +150,7 @@ fn make_text(
         shadow: DropShadow::default(),
         animation: ElementAnimation::Fade,
         group_id: None,
+        text_format: Default::default(),
         kind: ElementKind::Text {
             content: content.to_string(),
             font_family,
@@ -400,6 +402,7 @@ fn build_pitch_deck_template() -> Project {
         },
         animation: ElementAnimation::Rise,
         group_id: None,
+        text_format: Default::default(),
         kind: ElementKind::Chart {
             chart_type: ChartType::VerticalBar,
             title: "Design Assets Shipped (Thousands)".to_string(),
@@ -871,6 +874,7 @@ fn build_infographic_template() -> Project {
         shadow: DropShadow::default(),
         animation: ElementAnimation::Pop,
         group_id: None,
+        text_format: Default::default(),
         kind: ElementKind::Chart {
             chart_type: ChartType::Donut,
             title: "Workflow Time Saved by Feature".to_string(),
@@ -909,6 +913,7 @@ fn build_infographic_template() -> Project {
         shadow: DropShadow::default(),
         animation: ElementAnimation::Rise,
         group_id: None,
+        text_format: Default::default(),
         kind: ElementKind::Table {
             rows: 4,
             cols: 3,
@@ -1229,6 +1234,7 @@ pub fn make_stock_image_element(
         },
         animation: ElementAnimation::Fade,
         group_id: None,
+        text_format: Default::default(),
         kind: ElementKind::Image {
             source_name: asset.name.to_string(),
             width_px: asset.width,

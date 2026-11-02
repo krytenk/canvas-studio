@@ -95,15 +95,27 @@ pub fn register_project(project: &Project) -> Result<(), String> {
     }
     for element in project.pages.iter().flat_map(|p| &p.elements) {
         if let ElementKind::Text {
-            font_family: FontFamily::Imported(id),
+            font_family,
+            content,
             ..
         } = &element.kind
         {
-            if !project.imported_fonts.iter().any(|f| f.id == *id) {
-                return Err(format!(
-                    "Text '{}' references a missing imported font",
-                    element.name
-                ));
+            element.text_format.validate(content)?;
+            for family in std::iter::once(*font_family).chain(
+                element
+                    .text_format
+                    .runs
+                    .iter()
+                    .filter_map(|r| r.font_family),
+            ) {
+                if let FontFamily::Imported(id) = family {
+                    if !project.imported_fonts.iter().any(|f| f.id == id) {
+                        return Err(format!(
+                            "Text '{}' references a missing imported font",
+                            element.name
+                        ));
+                    }
+                }
             }
         }
     }

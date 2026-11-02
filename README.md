@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.3.0**, with corrected template exports, group editing,
+Current development: **1.4.0**, with corrected template exports, group editing,
 a personal template library and print typography/position controls.
 See [changes](CHANGELOG.md) and the [print-first roadmap](docs/ROADMAP.md).
 
@@ -146,3 +146,10 @@ in the font menu; import separate bold/italic faces when needed. Font bytes trav
 inside the saved project and template, so the source font file is not needed later.
 Only faces permitting editable outline embedding are accepted. Variable fonts,
 collections and CFF outlines are not supported yet.
+
+### Paragraphs and emphasis
+
+Select a text frame and open **Typography** to set paragraph spacing, indentation
+and frame insets. Double-click the canvas text and select characters, then apply
+emphasis or an actual font face in the Typography panel. The main toolbar controls
+the frame defaults. **Clear character styles** removes range overrides.

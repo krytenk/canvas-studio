@@ -11,7 +11,6 @@ use crate::magic_studio::apply_image_pipeline;
 use crate::model::font_registry::register_egui_fonts;
 use crate::model::pdf_export::sample_bilinear_rgba;
 use crate::model::render_scene::{compute_image_placement, mask_coverage};
-use crate::model::text_layout::layout_text_block;
 use crate::model::{
     compute_smart_snap, to_egui_color, with_opacity, BrushType, CanvasElement, ChartType,
     ElementAnimation, ElementKind, FillStyle, HistoryManager, ImageMask, PageBackground, Project,
@@ -54,6 +53,7 @@ pub struct CanvasInteractionState {
     pub draw_width: f32,
     pub current_stroke_pts: Vec<Pos2>,
     pub inline_edit_id: Option<u64>,
+    pub text_selection: Option<(u64, usize, usize)>,
     pub texture_cache: HashMap<(u64, u64), TextureHandle>,
     pub anim_start_time: f64,
 }
@@ -83,6 +83,7 @@ impl CanvasInteractionState {
             draw_width: 5.0,
             current_stroke_pts: Vec::new(),
             inline_edit_id: None,
+            text_selection: None,
             texture_cache: HashMap::new(),
             anim_start_time: 0.0,
         }
@@ -99,6 +100,7 @@ impl CanvasInteractionState {
         self.active_guides.clear();
         self.current_stroke_pts.clear();
         self.inline_edit_id = None;
+        self.text_selection = None;
         self.texture_cache.clear();
     }
 }
@@ -340,6 +342,7 @@ pub fn render_interactive_canvas(
                     shadow: Default::default(),
                     animation: ElementAnimation::None,
                     group_id: None,
+                    text_format: Default::default(),
                     kind: ElementKind::FreehandPath {
                         points: norm_pts,
                         color: state.draw_color,
@@ -917,11 +920,24 @@ pub fn render_interactive_canvas(
                                     srect.width().max(180.0),
                                     srect.height().max(54.0),
                                 ));
-                                ui.add(
-                                    egui::TextEdit::multiline(content)
-                                        .desired_width(srect.width().max(180.0))
-                                        .desired_rows(2),
-                                );
+                                let before = content.clone();
+                                let output = egui::TextEdit::multiline(&mut *content)
+                                    .desired_width(srect.width().max(180.))
+                                    .desired_rows(2)
+                                    .show(ui);
+                                if output.response.changed() {
+                                    edit_el.text_format.reconcile_edit(&before, content);
+                                }
+                                if let Some(range) = output.cursor_range {
+                                    let selected = range.as_sorted_char_range();
+                                    let start = selected.start;
+                                    let end = selected.end;
+                                    state.text_selection = if start < end {
+                                        Some((edit_id, start, end))
+                                    } else {
+                                        None
+                                    };
+                                }
                                 if ui.small_button("✔ Done Editing").clicked() {
                                     close_inline = true;
                                 }
@@ -929,6 +945,7 @@ pub fn render_interactive_canvas(
                     });
                 if close_inline {
                     state.inline_edit_id = None;
+                    state.text_selection = None;
                 }
             } else {
                 state.inline_edit_id = None;
@@ -1248,7 +1265,7 @@ fn paint_canvas_element(
             effect,
             list_style,
         } => {
-            let layout = layout_text_block(
+            let layout = crate::paragraph_layout::layout_formatted(
                 content,
                 *font_family,
                 *font_size,
@@ -1261,6 +1278,7 @@ fn paint_canvas_element(
                 *list_style,
                 el.width,
                 el.height,
+                &el.text_format,
             );
             if matches!(effect, TextEffect::None) {
                 use std::hash::{Hash, Hasher};
@@ -1275,6 +1293,9 @@ fn paint_canvas_element(
                 let h = (lh * scale).ceil().max(1.) as u32;
                 let mut hash = std::collections::hash_map::DefaultHasher::new();
                 serde_json::to_string(&el.kind)
+                    .unwrap_or_default()
+                    .hash(&mut hash);
+                serde_json::to_string(&el.text_format)
                     .unwrap_or_default()
                     .hash(&mut hash);
                 (w, h, el.width.to_bits(), el.height.to_bits()).hash(&mut hash);

@@ -1,4 +1,4 @@
-use crate::model::text_layout::{layout_text_block, TextLayoutResult};
+use crate::model::text_layout::TextLayoutResult;
 use crate::model::{
     CanvasElement, CanvasPage, ColorRgba, ElementKind, FillStyle, ImageAdjustments, ImageCrop,
     ImageFit, ImageMask, PageBackground, ShapeType,
@@ -457,7 +457,7 @@ pub fn build_page_scene(page: &CanvasPage, width: f32, height: f32) -> RenderSce
                 list_style,
                 ..
             } => {
-                let layout = layout_text_block(
+                let layout = crate::paragraph_layout::layout_formatted(
                     content,
                     *font_family,
                     *font_size,
@@ -470,6 +470,7 @@ pub fn build_page_scene(page: &CanvasPage, width: f32, height: f32) -> RenderSce
                     *list_style,
                     el.width,
                     el.height,
+                    &el.text_format,
                 );
                 items.push(SceneItem::Text {
                     element_id: el.id,
