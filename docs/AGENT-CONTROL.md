@@ -165,3 +165,6 @@ changing live editing state. `studio_export(format:"zip",path:"campaign.zip")`
 delivers every layout plus the editable project and manifest (up to 100 pages /
 128 MiB). The new portable envelope guards campaign data against older builds.
 See the [campaign workflow](CAMPAIGN-STUDIO.md) for ownership rules and limits.
+
+Browser-service revision epochs change on restart, so cached pre-restart revisions
+cannot silently become current again. Treat revisions as opaque comparison values.

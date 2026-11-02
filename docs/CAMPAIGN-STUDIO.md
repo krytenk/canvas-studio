@@ -22,6 +22,8 @@ primary colour. **Unlink colour** freezes the current appearance for a local
 choice. Text/shape colour controls are disabled while their corresponding colour
 is linked. MCP rejects a local colour override until that link is removed.
 Background colour links are also available through the shared command API.
+On desktop, ordinary colour pickers/palettes create a local override and detach
+the affected link; named-colour controls keep shared links intact.
 
 Use **Save current as another layout** to create an independent copy, including
 fresh page/layer/group identities and retained copy/colour links. Additional

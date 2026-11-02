@@ -165,3 +165,41 @@ fn reusable_groups_and_scaling_materialize_linked_type_without_changing_shared_c
     );
     assert_eq!(p.production.styles["headline"].size, 80.);
 }
+
+#[test]
+fn desktop_local_colour_overrides_detach_only_the_edited_target() {
+    let before = campaign::starter();
+    let mut after = before.clone();
+    let id = after.pages[0]
+        .elements
+        .iter()
+        .find(|e| e.name == "Campaign headline")
+        .unwrap()
+        .id;
+    if let ElementKind::Text { color, .. } = &mut after.pages[0]
+        .elements
+        .iter_mut()
+        .find(|e| e.id == id)
+        .unwrap()
+        .kind
+    {
+        *color = rgb(160, 40, 60);
+    }
+    campaign::reconcile_local_colors(&before, &mut after);
+    assert!(!after.production.studio.colors[&id].contains_key("text"));
+    assert_eq!(
+        after.production.studio.tokens,
+        before.production.studio.tokens
+    );
+    let mut shared = before.clone();
+    shared
+        .production
+        .studio
+        .tokens
+        .insert("ink".into(), rgb(30, 50, 80));
+    campaign::reconcile_local_colors(&before, &mut shared);
+    assert_eq!(
+        shared.production.studio.colors,
+        before.production.studio.colors
+    );
+}

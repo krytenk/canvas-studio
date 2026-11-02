@@ -1479,6 +1479,9 @@ impl CanvasStudioApp {
         // coalescing continuous drag/slider/inline-typing gestures into a single undo entry while
         // marking dirty immediately on the first change.
         let pointer_down = ctx.input(|i| i.pointer.any_down());
+        if !self.mutation_recorded_this_frame {
+            crate::campaign::reconcile_local_colors(&pre_frame_dehydrated, &mut self.project);
+        }
         let post_frame_dehydrated = self.frame_snapshot_cache.snapshot(&self.project);
         if !self.mutation_recorded_this_frame && post_frame_dehydrated != pre_frame_dehydrated {
             if !self.continuous_edit_active {
@@ -3114,6 +3117,16 @@ impl CanvasStudioApp {
                     {
                         self.record_mutation();
                         self.project.brand_kit.active_palette_idx = p_idx;
+                        let page_id = self.project.pages[self.current_page_idx].id;
+                        self.project.production.studio.backgrounds.remove(&page_id);
+                        for id in self.project.pages[self.current_page_idx]
+                            .elements
+                            .iter()
+                            .map(|e| e.id)
+                            .collect::<Vec<_>>()
+                        {
+                            self.project.production.studio.colors.remove(&id);
+                        }
                         self.palette_shuffle_cursor += 1;
                         let rot = self.palette_shuffle_cursor;
                         if let Some(page) = self.current_page_mut() {
@@ -3140,6 +3153,7 @@ impl CanvasStudioApp {
             return;
         };
         self.record_mutation();
+        let _ = crate::campaign::bind(&mut self.project, &[sel_id], "primary", None);
         if let Some(el) = self
             .current_page_mut()
             .and_then(|p| p.elements.iter_mut().find(|e| e.id == sel_id))

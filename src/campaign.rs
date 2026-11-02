@@ -612,3 +612,49 @@ pub fn starter() -> Project {
     first.apply(&mut p);
     p
 }
+
+/// Ordinary desktop colour pickers create local overrides; named-colour commands
+/// use the explicit command path and skip this direct-widget reconciliation.
+pub fn reconcile_local_colors(before: &Project, after: &mut Project) {
+    if before.document_id != after.document_id || !before.production.studio.active() {
+        return;
+    }
+    fn literal(e: &CanvasElement, target: &str) -> Option<ColorRgba> {
+        match (target, &e.kind) {
+            ("text", ElementKind::Text { color, .. })
+            | ("fill", ElementKind::FreehandPath { color, .. }) => Some(*color),
+            ("fill", ElementKind::Shape { fill, .. }) => Some(fill.primary_color()),
+            ("stroke", ElementKind::Shape { stroke_color, .. }) => Some(*stroke_color),
+            ("stroke", ElementKind::Image { border_color, .. }) => Some(*border_color),
+            _ => None,
+        }
+    }
+    for page in &after.pages {
+        let Some(prior) = before.pages.iter().find(|p| p.id == page.id) else {
+            continue;
+        };
+        if page.background != prior.background
+            && after.production.studio.backgrounds.get(&page.id)
+                == before.production.studio.backgrounds.get(&page.id)
+        {
+            after.production.studio.backgrounds.remove(&page.id);
+        }
+        for e in &page.elements {
+            let Some(old) = prior.elements.iter().find(|o| o.id == e.id) else {
+                continue;
+            };
+            if let Some(bindings) = after.production.studio.colors.get_mut(&e.id) {
+                bindings.retain(|target, key| {
+                    before
+                        .production
+                        .studio
+                        .colors
+                        .get(&e.id)
+                        .and_then(|b| b.get(target))
+                        != Some(key)
+                        || literal(old, target) == literal(e, target)
+                });
+            }
+        }
+    }
+}

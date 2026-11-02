@@ -1244,6 +1244,11 @@ pub fn run(port: u16, initial: Option<PathBuf>) -> Result<(), String> {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
+    // A fresh 48-bit epoch fits exactly in JavaScript integers and prevents stale
+    // revision handles from becoming valid again after a server restart.
+    let revision_epoch = u64::from_le_bytes([
+        random[0], random[1], random[2], random[3], random[4], random[5], 0, 0,
+    ]);
     let host = format!("127.0.0.1:{port}");
     // Private loopback credential for local agent adapters, never a public project asset.
     let connection = recovery.with_file_name(format!("connection-{port}.json"));
@@ -1274,7 +1279,7 @@ pub fn run(port: u16, initial: Option<PathBuf>) -> Result<(), String> {
     fs::rename(&staging, &connection).map_err(|e| e.to_string())?;
     let session = Arc::new(Mutex::new(Session {
         project,
-        revision: 0,
+        revision: revision_epoch,
         undo: Vec::new(),
         redo: Vec::new(),
         recovery: Some(recovery),

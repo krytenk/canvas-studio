@@ -2,7 +2,7 @@
 
 ## 1.12.0 campaign/layout integration
 
-78 local Rust checks pass. New coverage exercises four independent layouts,
+79 local Rust checks pass. New coverage exercises four independent layouts,
 shared copy/brand colours, exact rendered round trips, assets living only in
 inactive layouts/components, group-aware operations, lock rejection and linked
 typography materialized for component/selection scaling. The real STDIO campaign

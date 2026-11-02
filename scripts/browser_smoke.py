@@ -158,6 +158,7 @@ def run(binary,chrome):
         recovered=list((qa/'server-data/canvas-studio/browser').glob('recovery-*.canvas'));assert recovered
         subprocess.run([str(binary),'--verify-project',str(recovered[-1])],check=True,capture_output=True)
         # Restart on the same port without --open and verify the recovery document.
+        before_restart=json.load(api('/api/state'))
         process.terminate();process.wait(timeout=10)
         port=base.rstrip('/').rsplit(':',1)[1]
         process=subprocess.Popen([str(binary),'--serve-browser','--port',port],cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT)
@@ -172,6 +173,12 @@ def run(binary,chrome):
         recovered_state=json.load(urllib.request.urlopen(urllib.request.Request(recovered_base+'api/state',headers={'X-Canvas-Token':recovered_token})))
         assert next(f['value'] for f in recovered_state['fields'] if f['key']=='guest_name')=='Maya & Alex'
         assert len(recovered_state['elements'])==4
+        assert recovered_state['revision']!=before_restart['revision']
+        try:
+            urllib.request.urlopen(urllib.request.Request(recovered_base+'api/command',data=json.dumps({'action':'title','value':'Stale before restart'}).encode(),headers={'X-Canvas-Token':recovered_token,'X-Canvas-Document':before_restart['document_id'],'X-Canvas-Revision':str(before_restart['revision'])}))
+            raise AssertionError('Pre-restart revision was reused')
+        except urllib.error.HTTPError as error:assert error.code==409
+
         report={'browser':'Chrome/Chromium, isolated headless profile','recovery_restart':'passed','native_round_trip':'passed','unicode_and_font_import':'passed','linked_text_all_five_pages':'passed','jpeg_photo_replacement':'passed','paragraph_and_character_styles':'passed','undo_redo':'passed','revision_conflict_and_origin_auth':'passed','responsive_700px':'passed','page_errors':errors}
         (qa/'report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
     finally:process.terminate();process.wait(timeout=10);log.close()
