@@ -58,11 +58,15 @@ jobs:
         run: |
           python3 scripts/desktop_launcher_smoke.py
           .ui-venv/bin/python scripts/mockup_smoke.py --binary target/release/canvas-studio --chrome chromium
+          .ui-venv/bin/python scripts/native_mockup_smoke.py --binary target/release/canvas-studio
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: canvas-studio-ui-proofs
           path: |
+            qa/native-mockups/*.png
+            qa/native-mockups/result.txt
+            qa/native-mockups/native.log
             qa/mockups/*.png
             qa/mockups/report.json
             qa/motion/motion-ui.png
