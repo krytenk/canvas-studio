@@ -70,7 +70,7 @@ def run(binary,chrome=None):
   if chrome:
    from playwright.sync_api import sync_playwright
    with sync_playwright() as pw:
-    browser=pw.chromium.launch(channel=chrome,headless=True,args=['--enable-unsafe-swiftshader']);page=browser.new_page(viewport={'width':1512,'height':1050});errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.goto(url);page.get_by_role('button',name='Product mockups',exact=True).click();page.get_by_text('Live Three.js ·',exact=False).wait_for()
+    browser=pw.chromium.launch(channel=chrome,headless=True,args=['--enable-unsafe-swiftshader']);page=browser.new_page(viewport={'width':1512,'height':1050});errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.goto(url);page.get_by_role('button',name='Product mockups',exact=True).click();page.get_by_text('Live Three.js ·',exact=False).wait_for();page.locator('.mockup-job').first.wait_for();assert not page.locator('#message.error').is_visible()
     canvas=page.locator('#mockup-canvas');count=canvas.get_attribute('data-render-count');page.wait_for_timeout(400);assert count==canvas.get_attribute('data-render-count'),'Idle WebGL render loop'
     page.locator('#mockup-time').fill('1');one=canvas.screenshot();page.locator('#mockup-time').fill('4');four=canvas.screenshot();page.locator('#mockup-time').fill('1');assert canvas.screenshot()==one and one!=four,'Out-of-order Three.js seeks are not deterministic'
     page.get_by_label('Turn °',exact=True).fill('-36');page.get_by_role('button',name='Apply scene',exact=True).click();page.wait_for_function("()=>state.mockups[0].yaw===-36");page.get_by_text('Live Three.js ·',exact=False).wait_for();page.screenshot(path=str(qa/'mockup-ui.png'))

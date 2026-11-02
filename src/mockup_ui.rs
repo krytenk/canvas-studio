@@ -197,7 +197,7 @@ impl CanvasStudioApp {
         if now - self.mockup_ui.poll > 1. {
             self.mockup_ui.jobs = crate::media_service::jobs(&self.project.document_id)
                 .ok()
-                .and_then(|v| v.as_array().cloned())
+                .and_then(|v| v["jobs"].as_array().cloned())
                 .unwrap_or_default();
             self.mockup_ui.poll = now;
         }
