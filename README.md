@@ -4,7 +4,8 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.1.1**, with corrected template exports and group editing.
+Current development: **1.2.0**, with corrected template exports, group editing,
+a personal template library and print typography/position controls.
 See [changes](CHANGELOG.md) and the [print-first roadmap](docs/ROADMAP.md).
 
 ![A4 example layout exported by Canvas Studio](docs/example-layout.png)
@@ -51,6 +52,9 @@ Fonts are included in this repository; no separate font installation is needed.
 - PNG, SVG, PDF and HTML presentation export.
 - Font and export preflight checks that report unsupported content.
 - Generic layout JSON import, including image paths relative to the layout file.
+- Personal production masters with preview thumbnails, tags and search.
+- Text size in points, line height, tracking and overflow warnings.
+- Numeric position/size in mm, inches or layout pixels, plus aspect lock and flips.
 
 The creative writing and image tools are local algorithms. They do not connect to
 a hosted generative-AI service.
@@ -61,6 +65,23 @@ Save an editable project as `design.canvas.json`. Images are written into a
 companion `assets/` directory beside that JSON. **Move or share both together.**
 The app also accepts compatible older JSON projects, including their older font
 identifiers. Opening an older file does not automatically overwrite it.
+
+## Reuse a personal template
+
+In **Design Templates**, enter a name and optional comma-separated tags under
+**My Templates**, then choose **Save Current Design as New Master**. Production
+masters must pass export preflight. Ordinary project saves remain available for
+designs using unsupported preview effects.
+
+Use **Open New Copy** to start a separate working document. The master retains
+its files and identity. Save the working document to your chosen location.
+The library is stored in the system application-data directory under
+`canvas-studio/templates`; each entry contains its metadata, preview, project
+and companion assets. Copy that complete folder when backing up or moving the
+library. It runs locally and does not create customer browser-editing links.
+
+Select a text element and open **Typography** for point size, leading and
+tracking. Open **Layers & Position** for numeric geometry, units and aspect lock.
 
 Recovery is stored per document in the system application-data directory:
 

@@ -1,8 +1,11 @@
 mod canvas_view;
 mod document_ops;
 mod exporter;
+#[cfg(test)]
+mod library_tests;
 mod magic_studio;
 mod model;
+mod template_library;
 mod templates;
 #[cfg(test)]
 mod workflow_tests;
@@ -140,6 +143,14 @@ struct CanvasStudioApp {
     magic_write_tone: MagicWriteTone,
     palette_shuffle_cursor: usize,
     clipboard_elements: Vec<CanvasElement>,
+    library_entries: Vec<template_library::TemplateEntry>,
+    library_warnings: Vec<String>,
+    library_filter: String,
+    library_name: String,
+    library_tags: String,
+    library_previews: std::collections::HashMap<String, egui::TextureHandle>,
+    inspector_unit: u8,
+    inspector_aspect_lock: bool,
     show_notes_drawer: bool,
     current_project_path: Option<PathBuf>,
     dirty: bool,
@@ -196,6 +207,14 @@ impl CanvasStudioApp {
             magic_write_tone: MagicWriteTone::BoldLaunch,
             palette_shuffle_cursor: 0,
             clipboard_elements: Vec::new(),
+            library_entries: Vec::new(),
+            library_warnings: Vec::new(),
+            library_filter: String::new(),
+            library_name: String::new(),
+            library_tags: String::new(),
+            library_previews: Default::default(),
+            inspector_unit: 0,
+            inspector_aspect_lock: true,
             show_notes_drawer: false,
             current_project_path: None,
             dirty: false,
@@ -218,7 +237,128 @@ impl CanvasStudioApp {
             queued_history: 0,
         };
         app.recovery_available = app.latest_available_recovery_path().is_some();
+        app.refresh_template_library();
         app
+    }
+
+    fn template_library_dir(&self) -> PathBuf {
+        self.recovery_dir_override
+            .as_ref()
+            .map(|p| p.join("templates"))
+            .unwrap_or_else(|| application_data_dir().join("canvas-studio/templates"))
+    }
+
+    fn refresh_template_library(&mut self) {
+        match template_library::list(&self.template_library_dir()) {
+            Ok((entries, warnings)) => {
+                self.library_entries = entries;
+                self.library_warnings = warnings;
+            }
+            Err(e) => self.library_warnings = vec![e],
+        }
+    }
+
+    fn save_library_template(&mut self) {
+        let name = if self.library_name.trim().is_empty() {
+            self.project.title.clone()
+        } else {
+            self.library_name.clone()
+        };
+        match template_library::save(
+            &self.template_library_dir(),
+            &name,
+            &self.library_tags,
+            &self.project,
+        ) {
+            Ok(entry) => {
+                self.status_banner = format!("Saved master '{}' to My Templates", entry.name);
+                self.refresh_template_library();
+            }
+            Err(e) => self.status_banner = format!("Template could not be saved: {e}"),
+        }
+    }
+
+    fn open_library_copy(&mut self, id: &str) {
+        match template_library::open_copy(&self.template_library_dir(), id) {
+            Ok(project) => {
+                let title = project.title.clone();
+                self.request_replace_document(
+                    project,
+                    None,
+                    format!("New working copy of '{title}' — master preserved"),
+                );
+            }
+            Err(e) => self.status_banner = format!("Template could not be opened: {e}"),
+        }
+    }
+
+    fn render_template_library(&mut self, ui: &mut Ui) {
+        ui.strong("My Templates");
+        ui.label("Saved masters stay unchanged. Open a fresh working copy.");
+        ui.add(
+            egui::TextEdit::singleline(&mut self.library_name)
+                .hint_text("Template name (defaults to document title)"),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut self.library_tags)
+                .hint_text("Tags, separated, by commas"),
+        );
+        if ui.button("Save Current Design as New Master").clicked() {
+            self.save_library_template();
+        }
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.library_filter)
+                    .desired_width(180.)
+                    .hint_text("Search name or tag"),
+            );
+            if ui.small_button("Refresh").clicked() {
+                self.refresh_template_library();
+            }
+        });
+        for warning in &self.library_warnings {
+            ui.colored_label(Color32::LIGHT_RED, warning);
+        }
+        let entries: Vec<_> = self
+            .library_entries
+            .iter()
+            .filter(|e| e.matches(&self.library_filter))
+            .cloned()
+            .collect();
+        if entries.is_empty() {
+            ui.label("No matching saved templates yet.");
+        }
+        for entry in entries {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                if !self.library_previews.contains_key(&entry.id) {
+                    if let Ok(image) = image::open(
+                        self.template_library_dir()
+                            .join(&entry.id)
+                            .join("preview.png"),
+                    ) {
+                        let image = image.to_rgba8();
+                        let texture = ui.ctx().load_texture(
+                            format!("template-{}", entry.id),
+                            egui::ColorImage::from_rgba_unmultiplied(
+                                [image.width() as usize, image.height() as usize],
+                                image.as_raw(),
+                            ),
+                            egui::TextureOptions::LINEAR,
+                        );
+                        self.library_previews.insert(entry.id.clone(), texture);
+                    }
+                }
+                if let Some(texture) = self.library_previews.get(&entry.id) {
+                    ui.add(egui::Image::new(texture).max_size(Vec2::new(230., 160.)));
+                }
+                ui.strong(&entry.name);
+                ui.label(format!("{} · {} page(s)", entry.format, entry.page_count));
+                ui.label(entry.tags.join(", "));
+                if ui.button("Open New Copy").clicked() {
+                    self.open_library_copy(&entry.id);
+                }
+            });
+        }
     }
 
     fn recovery_dir(&self) -> PathBuf {
@@ -2237,7 +2377,7 @@ impl CanvasStudioApp {
                                         .speed(0.02)
                                         .prefix("Opacity: "),
                                 );
-                                ui.checkbox(&mut el.shadow.enabled, "Shadow");
+                                ui.checkbox(&mut el.shadow.enabled, "Shadow (preview only)");
 
                                 egui::ComboBox::from_id_salt("el_anim_bar")
                                     .selected_text(format!("🎞 {}", el.animation.label()))
@@ -2368,6 +2508,8 @@ impl CanvasStudioApp {
         }
 
         ui.separator();
+        self.render_template_library(ui);
+        ui.separator();
         ui.strong("Built-In Studio Templates");
         ui.add_space(6.0);
 
@@ -2496,7 +2638,7 @@ impl CanvasStudioApp {
                             flip_h: false,
                             flip_v: false,
                             shadow: DropShadow {
-                                enabled: true,
+                                enabled: false,
                                 offset_x: 0.0,
                                 offset_y: 6.0,
                                 blur: 14.0,
@@ -2522,6 +2664,7 @@ impl CanvasStudioApp {
     fn render_dock_text(&mut self, ui: &mut Ui) {
         ui.heading("𝐓 Typography & Presets");
         ui.add_space(8.0);
+        self.render_selected_typography(ui);
 
         if ui
             .add_sized(
@@ -2536,7 +2679,7 @@ impl CanvasStudioApp {
                 "Add a Heading",
                 FontFamily::PosterHeavy,
                 68.0,
-                rgb(255, 255, 255),
+                rgb(28, 34, 44),
                 true,
                 TextEffect::None,
             );
@@ -2555,7 +2698,7 @@ impl CanvasStudioApp {
                 "Add a subheading",
                 FontFamily::Sans,
                 38.0,
-                rgb(203, 213, 225),
+                rgb(50, 58, 68),
                 false,
                 TextEffect::None,
             );
@@ -2574,14 +2717,15 @@ impl CanvasStudioApp {
                 "Add a little bit of body text for paragraphs and captions.",
                 FontFamily::Sans,
                 24.0,
-                rgb(148, 163, 184),
+                rgb(65, 72, 82),
                 false,
                 TextEffect::None,
             );
         }
 
         ui.add_space(16.0);
-        ui.strong("✨ Curated Font Combinations & Effects");
+        ui.strong("✨ Decorative Text Effects");
+        ui.label("These effects are for preview. Set the effect to None before production export.");
         ui.add_space(8.0);
 
         let presets = [
@@ -3242,9 +3386,187 @@ impl CanvasStudioApp {
         });
     }
 
+    fn render_selected_typography(&mut self, ui: &mut Ui) {
+        let units = self.project.effective_units_per_inch();
+        let Some(id) = self.selected_id else {
+            return;
+        };
+        let Some(element) = self
+            .project
+            .pages
+            .get_mut(self.current_page_idx)
+            .and_then(|p| p.elements.iter_mut().find(|e| e.id == id))
+        else {
+            return;
+        };
+        if let ElementKind::Text {
+            content,
+            font_family,
+            font_size,
+            color,
+            bold,
+            italic,
+            uppercase,
+            align,
+            letter_spacing,
+            line_height,
+            list_style,
+            ..
+        } = &mut element.kind
+        {
+            ui.strong("Selected Text · Print Typography");
+            ui.add_enabled_ui(!element.locked, |ui| {
+                let mut points = *font_size * 72. / units;
+                ui.horizontal(|ui| {
+                    ui.label("Size (pt)");
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut points)
+                                .range(3.0..=200.0)
+                                .speed(0.25),
+                        )
+                        .changed()
+                    {
+                        *font_size = points * units / 72.;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Line height");
+                    ui.add(
+                        egui::DragValue::new(line_height)
+                            .range(0.8..=3.0)
+                            .speed(0.02),
+                    );
+                });
+                let mut tracking = *letter_spacing * 72. / units;
+                ui.horizontal(|ui| {
+                    ui.label("Tracking (pt)");
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut tracking)
+                                .range(-5.0..=30.0)
+                                .speed(0.1),
+                        )
+                        .changed()
+                    {
+                        *letter_spacing = tracking * units / 72.;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Text colour");
+                    color_Edit_button(ui, color);
+                });
+            });
+            let layout = crate::model::text_layout::layout_text_block(
+                content,
+                *font_family,
+                *font_size,
+                *bold,
+                *italic,
+                *uppercase,
+                *align,
+                *letter_spacing,
+                *line_height,
+                *list_style,
+                element.width,
+                element.height,
+            );
+            if layout.is_overflowing() {
+                ui.colored_label(
+                    Color32::LIGHT_RED,
+                    "Text exceeds its box. Enlarge the frame or reduce the type size.",
+                );
+            }
+            ui.separator();
+        }
+    }
+
+    fn render_position_inspector(&mut self, ui: &mut Ui) {
+        ui.strong("Position & Size");
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt("position-units")
+                .selected_text(["mm", "in", "layout px"][self.inspector_unit as usize])
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.inspector_unit, 0, "mm");
+                    ui.selectable_value(&mut self.inspector_unit, 1, "in");
+                    ui.selectable_value(&mut self.inspector_unit, 2, "layout px");
+                });
+            ui.checkbox(&mut self.inspector_aspect_lock, "Aspect lock");
+        });
+        let Some(id) = self.selected_id else {
+            ui.label("Select an element to set its position.");
+            return;
+        };
+        let selected = document_ops::selection_ids(
+            &self.project.pages[self.current_page_idx],
+            &self.canvas_state.selected_ids,
+            Some(id),
+        );
+        if selected.len() > 1 {
+            ui.label("Use the group handles to resize this selection proportionally. Select one layer for numeric geometry.");
+            return;
+        }
+        let units = self.project.effective_units_per_inch();
+        let factor = match self.inspector_unit {
+            0 => 25.4 / units,
+            1 => 1. / units,
+            _ => 1.,
+        };
+        let aspect_lock = self.inspector_aspect_lock;
+        if let Some(element) = self
+            .project
+            .pages
+            .get_mut(self.current_page_idx)
+            .and_then(|p| p.elements.iter_mut().find(|e| e.id == id))
+        {
+            ui.add_enabled_ui(!element.locked, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut element.name).hint_text("Layer name"));
+                let mut values = [
+                    element.x * factor,
+                    element.y * factor,
+                    element.width * factor,
+                    element.height * factor,
+                ];
+                let mut changed = [false; 4];
+                egui::Grid::new("position-values")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        for (i, label) in ["X", "Y", "Width", "Height"].iter().enumerate() {
+                            ui.label(*label);
+                            let mut widget = egui::DragValue::new(&mut values[i])
+                                .speed(if self.inspector_unit == 1 { 0.01 } else { 0.2 })
+                                .max_decimals(3);
+                            if i >= 2 {
+                                widget = widget.range((factor.max(0.001))..=100_000.0);
+                            }
+                            changed[i] = ui.add(widget).changed();
+                            ui.end_row();
+                        }
+                    });
+                if changed.iter().any(|c| *c) {
+                    if let Err(error) =
+                        document_ops::set_geometry(element, values, changed, factor, aspect_lock)
+                    {
+                        ui.colored_label(Color32::LIGHT_RED, error);
+                    }
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Rotation °");
+                    ui.add(egui::DragValue::new(&mut element.rotation).speed(0.5));
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut element.flip_h, "Flip H");
+                    ui.checkbox(&mut element.flip_v, "Flip V");
+                });
+            });
+        }
+        ui.separator();
+    }
+
     fn render_dock_layers(&mut self, ui: &mut Ui) {
         ui.heading("☰ Layers & Position");
         ui.add_space(6.0);
+        self.render_position_inspector(ui);
 
         let mut move_up: Option<usize> = None;
         let mut move_down: Option<usize> = None;

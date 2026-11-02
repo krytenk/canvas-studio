@@ -1,5 +1,16 @@
 # Changes
 
+## 1.2.0 — first print-studio milestone increment
+
+- Added **My Templates**: save a production master with a name, tags, image assets and preview; search the library and open independent working copies. Invalid library entries are reported without hiding healthy templates. Failed saves do not leave partial template entries.
+- Added selected-text controls for point size, line height and tracking, with an overflow warning.
+- Added numeric layer position and size in millimetres, inches or layout pixels, aspect lock, rotation and flips. Invalid geometry is rejected before mutation.
+- New documents start as A4. Standard heading/body presets use dark ink; newly inserted ordinary shapes and sample images no longer enable unsupported shadows by default.
+- Decorative preview effects are labelled so their production-export restriction is visible before use.
+- Added fresh-process library portability, protected-master, invalid-entry, physical-unit and non-mutating panel checks. The complete local suite now has 37 passing checks.
+
+This starts milestone 2. Imported fonts, rich text, linked styles, advanced print guides and single-file project packages are still pending. Later book/personalization/puzzle milestones are not implemented by this increment.
+
 ## 1.1.1 — production workflow fixes
 
 - All seven included templates use exportable defaults. Badge backgrounds remain editable shapes; unsupported demo charts become labelled editable bar graphics. General chart editing still has the documented export restrictions.

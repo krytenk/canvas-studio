@@ -138,6 +138,41 @@ pub fn scale_element(element: &mut CanvasElement, scale: f32) {
     }
 }
 
+/// Apply inspector values in the selected display units without partial mutation.
+pub fn set_geometry(
+    element: &mut CanvasElement,
+    mut values: [f32; 4],
+    changed: [bool; 4],
+    factor: f32,
+    aspect_lock: bool,
+) -> Result<(), String> {
+    if !factor.is_finite()
+        || factor <= 0.
+        || values.iter().any(|v| !v.is_finite())
+        || values[2] <= 0.
+        || values[3] <= 0.
+    {
+        return Err("Geometry must contain finite values and positive dimensions".into());
+    }
+    if element.locked {
+        return Err("Unlock the element before changing geometry".into());
+    }
+    if aspect_lock && changed[2] {
+        values[3] = element.height * values[2] / element.width.max(0.001);
+    } else if aspect_lock && changed[3] {
+        values[2] = element.width * values[3] / element.height.max(0.001);
+    }
+    let converted = values.map(|v| v / factor);
+    if converted.iter().any(|v| !v.is_finite()) {
+        return Err("Geometry is outside the supported range".into());
+    }
+    element.x = converted[0];
+    element.y = converted[1];
+    element.width = converted[2];
+    element.height = converted[3];
+    Ok(())
+}
+
 /// Insert every source page, preserving its proportions inside the destination.
 pub fn fitted_pages(destination: &mut Project, source: &Project) -> Vec<CanvasPage> {
     let scale =

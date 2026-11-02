@@ -1220,7 +1220,7 @@ pub fn make_stock_image_element(
         flip_h: false,
         flip_v: false,
         shadow: DropShadow {
-            enabled: true,
+            enabled: false,
             offset_x: 0.0,
             offset_y: 8.0,
             blur: 18.0,

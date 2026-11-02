@@ -969,7 +969,7 @@ pub struct Project {
 
 impl Default for Project {
     fn default() -> Self {
-        let format = DesignFormat::Presentation;
+        let format = DesignFormat::DocumentA4;
         let (width, height) = format.dimensions();
         let (width_mm, height_mm) = format.physical_dimensions_mm();
         Self {
@@ -985,7 +985,7 @@ impl Default for Project {
             units_per_inch: 96.0,
             bleed_mm: 0.0,
             crop_marks: false,
-            pages: vec![CanvasPage::new(1, "Cover Slide")],
+            pages: vec![CanvasPage::new(1, "Page 1")],
             brand_kit: BrandKit::default(),
             next_id: 100,
         }
