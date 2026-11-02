@@ -252,9 +252,11 @@ impl CanvasStudioApp {
             }
         });
         if self.completed_artwork.is_some() {
-            ui.label("A completed import was preserved separately because this document changed.");
+            ui.label(
+                "Completed production was preserved separately because this document changed.",
+            );
             if ui
-                .button("Save Completed Import as Portable Project…")
+                .button("Save Completed Production as Portable Project…")
                 .clicked()
             {
                 if let Some(path) = rfd::FileDialog::new()

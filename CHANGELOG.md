@@ -1,5 +1,13 @@
 # Changes
 
+## 1.8.0 — reproducible word-search products
+
+- Added a Puzzles panel with vocabulary, 8–24 grids, three direction rules, seeds, print typography/colours and batches of up to 50 puzzles. Optional answer pages follow the puzzles.
+- Exhaustively verify every target word in all eight directions, rejecting missing/ambiguous matches, duplicate/reversed-duplicate words and invalid input. Difficulty is a direction rule; reading age requires vocabulary review.
+- Save grid data, placements and recipes in portable projects. Rebuilding styling keeps the grid/answers and added artwork. Template insertion remaps recipe identities.
+- Generated-layer changes block checked exports until rebuilt or explicitly detached. Detaching retains ordinary editable pages and ends automated answer validation.
+- 63 release checks include 180 seed/difficulty combinations, 8/24 grids, 50 puzzles plus 50 answer pages, fresh-process recipe editing, modified-output detection and independent PDF/solver proof checks.
+
 ## 1.7.0 — book production
 
 - Added Book controls for thumbnail page organisation, independent duplication, reordering, facing-page margins, headers, footers, folios and front-matter numbering.

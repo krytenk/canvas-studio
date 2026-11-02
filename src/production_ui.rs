@@ -35,13 +35,13 @@ impl CanvasStudioApp {
                             self.reconcile_selection_and_page();
                             self.fit_canvas_to_viewport();
                             self.status_banner =
-                                "Artwork import completed; the editable book is ready to review"
+                                "Production completed; the editable pages are ready to review"
                                     .into();
                         } else {
                             project.document_id = model::generate_document_id();
                             project.recovery_origin_path = None;
                             self.completed_artwork = Some(project);
-                            self.status_banner="Artwork import completed separately because the document changed. Save it from the Book panel".into();
+                            self.status_banner="Production completed separately because the document changed. Save it from the Book panel".into();
                         }
                     }
                     Err(error) => self.status_banner = format!("Production job failed: {error}"),

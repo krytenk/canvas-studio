@@ -68,6 +68,7 @@ pub struct ProductionSettings {
     pub fields: BTreeMap<String, DataField>,
     pub styles: BTreeMap<String, SharedStyle>,
     pub book: crate::book_production::BookSettings,
+    pub puzzles: Vec<crate::puzzle_production::WordSearchProduct>,
 }
 
 impl ProductionSettings {
@@ -319,6 +320,9 @@ pub fn resolve_page(
 pub fn resolve(project: &Project, strict: bool) -> Result<Cow<'_, Project>, String> {
     if project.production.resolved {
         return Ok(Cow::Borrowed(project));
+    }
+    if strict {
+        crate::puzzle_production::validate_project(project)?;
     }
     if !project.production.active() {
         if strict

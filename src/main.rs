@@ -19,6 +19,10 @@ mod production;
 mod production_tests;
 mod production_ui;
 mod project_package;
+mod puzzle_production;
+#[cfg(test)]
+mod puzzle_tests;
+mod puzzle_ui;
 mod template_library;
 mod templates;
 #[cfg(test)]
@@ -77,6 +81,7 @@ enum DockTab {
     Layers,
     Production,
     Book,
+    Puzzles,
     AppInfo,
 }
 
@@ -94,6 +99,7 @@ impl DockTab {
             DockTab::Layers,
             DockTab::Production,
             DockTab::Book,
+            DockTab::Puzzles,
             DockTab::AppInfo,
         ]
     }
@@ -111,6 +117,7 @@ impl DockTab {
             DockTab::Layers => ("☰", "Layers"),
             DockTab::Production => ("▤", "Production"),
             DockTab::Book => ("▥", "Book"),
+            DockTab::Puzzles => ("▦", "Puzzles"),
             DockTab::AppInfo => ("ⓘ", "About"),
         }
     }
@@ -178,6 +185,7 @@ struct CanvasStudioApp {
     production_job:
         Option<std::sync::mpsc::Receiver<Result<crate::production_ui::ProductionOutcome, String>>>,
     completed_artwork: Option<Project>,
+    puzzle_draft: crate::puzzle_ui::PuzzleDraft,
     master_edit_session: Option<crate::book_ui::MasterEditSession>,
     book_page_offset: usize,
     book_preview_cache: std::collections::HashMap<(String, u64, u64), egui::TextureHandle>,
@@ -252,6 +260,7 @@ impl CanvasStudioApp {
             batch_editable: false,
             production_job: None,
             completed_artwork: None,
+            puzzle_draft: Default::default(),
             master_edit_session: None,
             book_page_offset: 0,
             book_preview_cache: Default::default(),
@@ -2569,6 +2578,7 @@ impl CanvasStudioApp {
                     DockTab::Layers => self.render_dock_layers(ui),
                     DockTab::Production => self.render_production(ui),
                     DockTab::Book => self.render_book(ui),
+                    DockTab::Puzzles => self.render_puzzles(ui),
                     DockTab::AppInfo => self.render_dock_app_info(ui),
                 });
             });

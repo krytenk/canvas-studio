@@ -4,9 +4,10 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.7.0**, with imported fonts, rich paragraphs, portable
-projects, linked collections/CSV production and book organisation/master controls.
-See [changes](CHANGELOG.md) and the [print-first roadmap](docs/ROADMAP.md).
+Current development: **1.8.0**, with imported fonts, rich paragraphs, portable
+projects, linked collections/CSV production, book organisation and checked word searches.
+See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
+the [practical workflow guide](docs/PRINT-STUDIO-GUIDE.md).
 
 ![A4 example layout exported by Canvas Studio](docs/example-layout.png)
 

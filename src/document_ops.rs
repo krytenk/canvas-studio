@@ -209,7 +209,7 @@ pub fn fitted_pages(destination: &mut Project, source: &Project) -> Vec<CanvasPa
         (destination.width / source.width.max(1.)).min(destination.height / source.height.max(1.));
     let dx = (destination.width - source.width * scale) / 2.;
     let dy = (destination.height - source.height * scale) / 2.;
-    source
+    let copies: Vec<_> = source
         .pages
         .iter()
         .map(|page| {
@@ -223,5 +223,47 @@ pub fn fitted_pages(destination: &mut Project, source: &Project) -> Vec<CanvasPa
             }
             copy
         })
-        .collect()
+        .collect();
+    // Preserve puzzle recipes when template pages are inserted with fresh IDs.
+    let page_ids: std::collections::HashMap<_, _> = source
+        .pages
+        .iter()
+        .zip(&copies)
+        .map(|(a, b)| (a.id, b.id))
+        .collect();
+    let layer_ids: std::collections::HashMap<_, _> = source
+        .pages
+        .iter()
+        .zip(&copies)
+        .flat_map(|(a, b)| {
+            a.elements
+                .iter()
+                .zip(&b.elements)
+                .map(|(a, b)| (a.id, b.id))
+        })
+        .collect();
+    let mut proof = destination.clone();
+    proof.pages.extend(copies.clone());
+    let recipes_valid = crate::puzzle_production::validate_project(source).is_ok();
+    for recipe in &source.production.puzzles {
+        if let Some(&page) = page_ids.get(&recipe.puzzle_page) {
+            let mut recipe = recipe.clone();
+            recipe.puzzle_page = page;
+            recipe.answer_page = recipe.answer_page.and_then(|id| page_ids.get(&id).copied());
+            recipe.generated_ids = recipe
+                .generated_ids
+                .iter()
+                .filter_map(|id| layer_ids.get(id).copied())
+                .collect();
+            if let Ok(signature) = crate::puzzle_production::signature(&proof, &recipe) {
+                recipe.signature = if recipes_valid {
+                    signature
+                } else {
+                    "invalid source recipe; rebuild before export".into()
+                };
+                destination.production.puzzles.push(recipe);
+            }
+        }
+    }
+    copies
 }

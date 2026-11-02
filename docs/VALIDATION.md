@@ -1,5 +1,19 @@
 # Canvas Studio validation
 
+## 1.8.0 local validation
+
+63 release checks pass, including 180 seed/difficulty combinations, deterministic
+regeneration, invalid/duplicate vocabulary, accidental repeated target words,
+minimum/maximum grid sizes, changed generated-layer detection and portable
+recipe editing in a fresh process. Template insertion retains remapped recipes.
+
+A 50-puzzle/50-answer-page book saves/reopens and exports as a 100-page PDF.
+The sample puzzle and answer PDFs were independently rendered with Poppler and
+visually reviewed. A separate Python solver verified exactly one occurrence of
+every sample target and matched all saved solution coordinates. Styling rebuilds
+preserve grid/placements and added custom artwork; invalid rebuilds preserve the
+source. Vocabulary/filler suitability and physical printing still need human review.
+
 ## 1.7.0 local validation
 
 57 release checks pass. A synthetic 50-page workbook with 512×640 artwork was

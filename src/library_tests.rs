@@ -178,6 +178,7 @@ fn print_panels_render_without_dirtying_the_document() {
         DockTab::Templates,
         DockTab::Production,
         DockTab::Book,
+        DockTab::Puzzles,
     ] {
         app.active_dock = dock;
         for _ in 0..3 {
