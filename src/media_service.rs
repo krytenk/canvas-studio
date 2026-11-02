@@ -16,58 +16,73 @@ use std::{
 };
 static ACTIVE: AtomicUsize = AtomicUsize::new(0);
 static SCRIPT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+const WORKER_FILES: &[(&str, &str)] = &[
+    ("worker.py", include_str!("../media/studio_media.py")),
+    (
+        "studio_motion.py",
+        include_str!("../media/studio_motion.py"),
+    ),
+    (
+        "studio_mockup.py",
+        include_str!("../media/studio_mockup.py"),
+    ),
+    (
+        "Noto-OFL.txt",
+        include_str!("../assets/fonts/LICENSE-OFL.txt"),
+    ),
+    ("mockup-scene.js", include_str!("../web/mockup-scene.js")),
+    (
+        "vendor/three.module.js",
+        include_str!("../web/vendor/three.module.js"),
+    ),
+    (
+        "vendor/three.core.js",
+        include_str!("../web/vendor/three.core.js"),
+    ),
+    (
+        "vendor/THREE-LICENSE.txt",
+        include_str!("../web/vendor/THREE-LICENSE.txt"),
+    ),
+];
+fn runtime_tag(files: &[(&str, &str)]) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    files.hash(&mut hash);
+    format!("{}-{:016x}", env!("CARGO_PKG_VERSION"), hash.finish())
+}
 fn script() -> Result<PathBuf, String> {
     SCRIPT
         .get_or_init(|| {
-            let dir = crate::media_store::folder("runtime")?.join(env!("CARGO_PKG_VERSION"));
-            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            let path = dir.join("worker.py");
-            let tmp = path.with_extension(format!("{}.tmp", generate_document_id()));
-            fs::write(&tmp, include_str!("../media/studio_media.py")).map_err(|e| e.to_string())?;
-            fs::rename(tmp, &path).map_err(|e| e.to_string())?;
-            for (name, data) in [
-                (
-                    "studio_motion.py",
-                    include_str!("../media/studio_motion.py"),
-                ),
-                (
-                    "Noto-OFL.txt",
-                    include_str!("../assets/fonts/LICENSE-OFL.txt"),
-                ),
-            ] {
-                let dest = path.parent().unwrap().join(name);
-                let tmp = dest.with_extension(format!("{}.tmp", generate_document_id()));
-                fs::write(&tmp, data).map_err(|e| e.to_string())?;
-                fs::rename(tmp, dest).map_err(|e| e.to_string())?;
-            }
-            fs::create_dir_all(path.parent().unwrap().join("vendor")).map_err(|e| e.to_string())?;
-            for (name, data) in [
-                (
-                    "studio_mockup.py",
-                    include_str!("../media/studio_mockup.py"),
-                ),
-                ("mockup-scene.js", include_str!("../web/mockup-scene.js")),
-                (
-                    "vendor/three.module.js",
-                    include_str!("../web/vendor/three.module.js"),
-                ),
-                (
-                    "vendor/three.core.js",
-                    include_str!("../web/vendor/three.core.js"),
-                ),
-                (
-                    "vendor/THREE-LICENSE.txt",
-                    include_str!("../web/vendor/THREE-LICENSE.txt"),
-                ),
-            ] {
-                let dest = path.parent().unwrap().join(name);
+            // Different development builds may stay open together. Never replace another
+            // build's Python modules or Three.js scene while its jobs are running.
+            let dir = crate::media_store::folder("runtime")?.join(runtime_tag(WORKER_FILES));
+            fs::create_dir_all(dir.join("vendor")).map_err(|e| e.to_string())?;
+            for (name, data) in WORKER_FILES {
+                let dest = dir.join(name);
                 let temp = dest.with_extension(format!("{}.tmp", generate_document_id()));
                 fs::write(&temp, data).map_err(|e| e.to_string())?;
                 fs::rename(temp, dest).map_err(|e| e.to_string())?;
             }
-            Ok(path)
+            Ok(dir.join("worker.py"))
         })
         .clone()
+}
+#[test]
+fn running_builds_keep_independent_renderer_resources() {
+    let original = [("worker.py", "worker"), ("mockup-scene.js", "first scene")];
+    let updated = [
+        ("worker.py", "worker"),
+        ("mockup-scene.js", "updated scene"),
+    ];
+    assert_eq!(runtime_tag(&original), runtime_tag(&original));
+    assert_ne!(runtime_tag(&original), runtime_tag(&updated));
+    assert_ne!(
+        runtime_tag(&original),
+        runtime_tag(&[
+            ("worker.py", "changed worker"),
+            ("mockup-scene.js", "first scene")
+        ])
+    );
 }
 pub fn dependencies() -> Value {
     json!({"python":Command::new("python3").arg("--version").output().is_ok_and(|p|p.status.success()),"ffmpeg":Command::new("ffmpeg").arg("-version").output().is_ok_and(|p|p.status.success()),"ffprobe":Command::new("ffprobe").arg("-version").output().is_ok_and(|p|p.status.success())})

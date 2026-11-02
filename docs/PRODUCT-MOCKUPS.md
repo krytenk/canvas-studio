@@ -25,6 +25,8 @@ previews; the main editor and existing poster images remain usable.
 
 **Render listing image** queues a PNG at time zero. **Render 6s reveal** queues a
 180-frame, 30fps H.264 MP4. Output width/height are even values from 256–2400.
+Worker resources are isolated by their embedded content, so an older open build
+cannot overwrite a newer build’s renderer during a job.
 Rendering uses the pinned local HyperFrames/Chromium installation described in
 [MOTION-STUDIO.md](MOTION-STUDIO.md); install it with
 `python3 scripts/setup_motion.py`. Software WebGL is supported, so no physical GPU
