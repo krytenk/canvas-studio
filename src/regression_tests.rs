@@ -376,8 +376,8 @@ fn pdf_rendering_and_unicode_content_regressions() {
     }
     assert_ne!(bytes(&a), bytes(&b));
     assert_ne!(
-        export_page_to_svg(&a.pages[0], a.width, a.height, false),
-        export_page_to_svg(&b.pages[0], b.width, b.height, false)
+        export_page_to_svg(&a.pages[0], a.width, a.height, false).unwrap(),
+        export_page_to_svg(&b.pages[0], b.width, b.height, false).unwrap()
     );
     for (name, p) in [("spacing-zero", &a), ("spacing-six", &b)] {
         fs::write(dir.join(format!("{name}.pdf")), bytes(p)).unwrap();

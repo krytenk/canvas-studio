@@ -257,8 +257,8 @@ pub fn upscale_image_2x(raw_rgba: &[u8], width: u32, height: u32) -> (u32, u32, 
     (new_w, new_h, out)
 }
 
-/// Magic Eraser: Smoothly inpaints a normalized rectangular patch `(rx, ry, rw, rh)` in `0.0..1.0`
-/// using boundary pixel interpolation so unwanted spots/watermarks vanish cleanly.
+/// Patch blending: Interpolates a normalized rectangular patch `(rx, ry, rw, rh)` in `0.0..1.0`
+/// using boundary pixel interpolation without scene understanding.
 pub fn magic_erase_patch(
     raw_rgba: &mut [u8],
     width: u32,
@@ -301,7 +301,7 @@ pub fn magic_erase_patch(
     }
 }
 
-/// Magic Layers: Extracts dominant color swatches and generates editable layered shapes & caption card
+/// Magic Layers: Samples four colour swatches and generates editable layered shapes & caption card
 /// from an image element on the current page.
 pub fn extract_magic_layers_from_image(
     raw_rgba: &[u8],
@@ -441,7 +441,7 @@ pub fn extract_magic_layers_from_image(
     elements
 }
 
-/// Magic Switch: Resizes the entire project to a new `DesignFormat` and intelligently
+/// Magic Switch: Resizes the entire project to a new `DesignFormat` and proportionally
 /// rescales & centers all elements across every page.
 pub fn magic_resize_project(project: &mut Project, new_format: DesignFormat) {
     let old_w = project.width.max(1.0);

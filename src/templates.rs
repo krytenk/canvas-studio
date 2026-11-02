@@ -168,7 +168,7 @@ fn make_text(
 }
 
 pub fn build_template_project(template_id: &str) -> Project {
-    match template_id {
+    let project = match template_id {
         "pitch_deck" => build_pitch_deck_template(),
         "social_launch" => build_social_launch_template(),
         "yt_thumbnail" => build_yt_thumbnail_template(),
@@ -177,7 +177,8 @@ pub fn build_template_project(template_id: &str) -> Project {
         "infographic_report" => build_infographic_template(),
         "brand_logo" => build_logo_template(),
         _ => build_pitch_deck_template(),
-    }
+    };
+    production_defaults(project)
 }
 
 fn new_template_project(title: &str, format: DesignFormat) -> Project {
@@ -1239,4 +1240,154 @@ pub fn make_stock_image_element(
             revision: 1,
         },
     }
+}
+
+/// Built-in examples use only features supported by every production exporter.
+/// Chart examples become editable labelled bar graphics, retaining their data.
+fn production_defaults(mut project: Project) -> Project {
+    let mut next = project.next_id;
+    for page in &mut project.pages {
+        let mut elements = Vec::new();
+        for mut el in std::mem::take(&mut page.elements) {
+            el.shadow.enabled = false;
+            if let ElementKind::Text {
+                effect:
+                    TextEffect::BackgroundPill {
+                        bg_color,
+                        radius,
+                        padding,
+                    },
+                ..
+            } = &el.kind
+            {
+                let gid = el.group_id.unwrap_or_else(|| {
+                    let id = next;
+                    next += 1;
+                    id
+                });
+                let mut backdrop = make_shape(
+                    next,
+                    &format!("{} backdrop", el.name),
+                    el.x - *padding,
+                    el.y - *padding * 0.5,
+                    el.width + *padding * 2.,
+                    el.height + *padding,
+                    ShapeType::RoundedRect,
+                    FillStyle::Solid(*bg_color),
+                    *radius,
+                );
+                next += 1;
+                backdrop.shadow.enabled = false;
+                backdrop.opacity = el.opacity;
+                backdrop.group_id = Some(gid);
+                backdrop.animation = el.animation;
+                el.group_id = Some(gid);
+                elements.push(backdrop);
+            }
+            if let ElementKind::Text { effect, .. } = &mut el.kind {
+                *effect = TextEffect::None;
+            }
+            if let ElementKind::Chart {
+                title,
+                labels,
+                values,
+                palette,
+                text_color,
+                ..
+            } = &el.kind
+            {
+                let gid = next;
+                next += 1;
+                let mut text =
+                    |name: String, content: String, x: f32, y: f32, w: f32, h: f32, size: f32| {
+                        let mut item = make_text(
+                            next,
+                            &name,
+                            x,
+                            y,
+                            w,
+                            h,
+                            &content,
+                            FontFamily::Sans,
+                            size,
+                            *text_color,
+                            false,
+                            TextAlign::Left,
+                            TextEffect::None,
+                        );
+                        next += 1;
+                        item.group_id = Some(gid);
+                        item.animation = ElementAnimation::None;
+                        item
+                    };
+                elements.push(text(
+                    format!("{} title", el.name),
+                    title.clone(),
+                    el.x,
+                    el.y,
+                    el.width,
+                    38.,
+                    22.,
+                ));
+                let count = values.len().max(1);
+                let row_h = (el.height - 52.).max(40.) / count as f32;
+                let max = values.iter().copied().fold(1., f32::max);
+                for (i, value) in values.iter().enumerate() {
+                    let y = el.y + 48. + i as f32 * row_h;
+                    let label = labels
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_else(|| format!("Item {}", i + 1));
+                    elements.push(text(
+                        format!("{} label {}", el.name, i),
+                        label,
+                        el.x,
+                        y,
+                        el.width * 0.25,
+                        row_h,
+                        16.,
+                    ));
+                    elements.push(text(
+                        format!("{} value {}", el.name, i),
+                        format!("{value:.0}"),
+                        el.x + el.width * 0.87,
+                        y,
+                        el.width * 0.13,
+                        row_h,
+                        16.,
+                    ));
+                    // Allocate shapes after text construction, independently of the text ID closure.
+                    let mut bar = make_shape(
+                        0,
+                        &format!("{} bar {}", el.name, i),
+                        el.x + el.width * 0.27,
+                        y + 2.,
+                        el.width * 0.56 * (*value / max).clamp(0.01, 1.),
+                        (row_h * 0.55).max(2.),
+                        ShapeType::Rectangle,
+                        FillStyle::Solid(
+                            palette
+                                .get(i % palette.len().max(1))
+                                .copied()
+                                .unwrap_or(rgb(0, 120, 160)),
+                        ),
+                        0.,
+                    );
+                    bar.shadow.enabled = false;
+                    bar.animation = ElementAnimation::None;
+                    bar.group_id = Some(gid);
+                    elements.push(bar);
+                }
+                for bar in elements.iter_mut().filter(|e| e.id == 0) {
+                    bar.id = next;
+                    next += 1;
+                }
+            } else {
+                elements.push(el);
+            }
+        }
+        page.elements = elements;
+    }
+    project.next_id = next;
+    project
 }

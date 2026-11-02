@@ -107,8 +107,8 @@ pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightRepo
     for (page_index, page) in project.pages.iter().enumerate() {
         for element in page.elements.iter().filter(|e| e.visible) {
             let unsupported=match &element.kind {
-                ElementKind::FreehandPath {brush,..} if *brush!=crate::model::BrushType::Pen => Some("Use the Pen brush for vector PDF; decorative drawing brushes are not supported"),
-                ElementKind::Image {mask,border_width,..} if *mask!=ImageMask::None && *border_width>0. => Some("Shaped photo borders are not supported in print PDF; set border width to zero"),
+                ElementKind::FreehandPath {brush,..} if *brush!=crate::model::BrushType::Pen => Some("Use the Pen brush for production exports; decorative drawing brushes are not supported"),
+                ElementKind::Image {mask,border_width,..} if *mask!=ImageMask::None && *border_width>0. => Some("Shaped photo borders are not supported in production exports; set border width to zero"),
                 _=>None,
             };
             if let Some(message) = unsupported {
@@ -128,7 +128,7 @@ pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightRepo
                 continue;
             }
             if element.shadow.enabled {
-                issues.push(PreflightIssue {page_index,element_id:element.id,element_name:element.name.clone(),severity:PreflightSeverity::Error,category:"unsupported_effect",message:"Drop shadows are not supported in print PDF; disable the shadow before exporting.".into()});
+                issues.push(PreflightIssue {page_index,element_id:element.id,element_name:element.name.clone(),severity:PreflightSeverity::Error,category:"unsupported_effect",message:"Drop shadows are not supported in production exports; disable the shadow before exporting.".into()});
             }
             match &element.kind {
                 ElementKind::Text {
@@ -168,7 +168,7 @@ pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightRepo
                     }
                     if let ElementKind::Text { effect, .. } = &element.kind {
                         if !matches!(effect, crate::model::TextEffect::None) {
-                            issues.push(PreflightIssue {page_index,element_id:element.id,element_name:element.name.clone(),severity:PreflightSeverity::Error,category:"unsupported_effect",message:format!("Text effect '{}' is not supported in print PDF; set it to None",effect.label())});
+                            issues.push(PreflightIssue {page_index,element_id:element.id,element_name:element.name.clone(),severity:PreflightSeverity::Error,category:"unsupported_effect",message:format!("Text effect '{}' is not supported in production exports; set it to None",effect.label())});
                         }
                     }
                     if layout.overflows_width || layout.overflows_height {

@@ -26,7 +26,27 @@ pub fn export_page_to_svg(
     width: f32,
     height: f32,
     transparent_bg: bool,
-) -> String {
+) -> Result<String, String> {
+    let mut project = Project::default();
+    project.width = width;
+    project.height = height;
+    project.width_mm = width / 96. * 25.4;
+    project.height_mm = height / 96. * 25.4;
+    project.pages = vec![page.clone()];
+    let report = crate::model::pdf_export::run_export_preflight(&project, 96);
+    let errors: Vec<_> = report
+        .issues
+        .iter()
+        .filter(|i| i.severity == crate::model::pdf_export::PreflightSeverity::Error)
+        .map(|i| format!("{}: {}", i.element_name, i.message))
+        .collect();
+    if !errors.is_empty() {
+        return Err(errors.join("; "));
+    }
+    Ok(render_page_svg(page, width, height, transparent_bg))
+}
+
+fn render_page_svg(page: &CanvasPage, width: f32, height: f32, transparent_bg: bool) -> String {
     let w = width.round() as i32;
     let h = height.round() as i32;
     let scene = build_page_scene(page, width, height);
@@ -1333,10 +1353,13 @@ fn xml_escape(s: &str) -> String {
 }
 
 /// Exports the entire multi-page `Project` as an interactive standalone HTML5 Presentation deck.
-pub fn export_project_to_html_deck(project: &Project) -> String {
+pub fn export_project_to_html_deck(project: &Project) -> Result<String, String> {
+    if project.pages.is_empty() {
+        return Err("Project contains no pages to export".into());
+    }
     let mut slides_html = String::new();
     for (idx, page) in project.pages.iter().enumerate() {
-        let svg = export_page_to_svg(page, project.width, project.height, false);
+        let svg = export_page_to_svg(page, project.width, project.height, false)?;
         let active_class = if idx == 0 { "slide active" } else { "slide" };
         slides_html.push_str(&format!(
             r#"<div class="{active_class}" data-title="{}">{svg}</div>"#,
@@ -1344,7 +1367,7 @@ pub fn export_project_to_html_deck(project: &Project) -> String {
         ));
     }
 
-    format!(
+    Ok(format!(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1389,7 +1412,7 @@ pub fn export_project_to_html_deck(project: &Project) -> String {
         xml_escape(&project.title),
         xml_escape(&project.title),
         project.pages.len()
-    )
+    ))
 }
 
 struct ActivePackageDirGuard(Option<std::path::PathBuf>);

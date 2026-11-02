@@ -1,8 +1,11 @@
 mod canvas_view;
+mod document_ops;
 mod exporter;
 mod magic_studio;
 mod model;
 mod templates;
+#[cfg(test)]
+mod workflow_tests;
 
 use std::path::{Path, PathBuf};
 
@@ -136,7 +139,7 @@ struct CanvasStudioApp {
     magic_write_topic: String,
     magic_write_tone: MagicWriteTone,
     palette_shuffle_cursor: usize,
-    clipboard_element: Option<CanvasElement>,
+    clipboard_elements: Vec<CanvasElement>,
     show_notes_drawer: bool,
     current_project_path: Option<PathBuf>,
     dirty: bool,
@@ -192,7 +195,7 @@ impl CanvasStudioApp {
             magic_write_topic: "Your next creative project".to_string(),
             magic_write_tone: MagicWriteTone::BoldLaunch,
             palette_shuffle_cursor: 0,
-            clipboard_element: None,
+            clipboard_elements: Vec::new(),
             show_notes_drawer: false,
             current_project_path: None,
             dirty: false,
@@ -745,30 +748,19 @@ impl CanvasStudioApp {
         } else if ctrl && ctx.input(|i| i.key_pressed(Key::D)) {
             self.duplicate_selected();
         } else if ctrl && ctx.input(|i| i.key_pressed(Key::C)) {
-            if let Some(sel_id) = self.selected_id {
-                if let Some(el) = self
-                    .current_page()
-                    .and_then(|p| p.elements.iter().find(|e| e.id == sel_id))
-                    .cloned()
-                {
-                    let name = el.name.clone();
-                    self.clipboard_element = Some(el);
-                    self.status_banner = format!("Copied '{name}'");
-                }
-            }
+            self.clipboard_elements = self
+                .current_page()
+                .map(|p| {
+                    document_ops::selected_elements(
+                        p,
+                        &self.canvas_state.selected_ids,
+                        self.selected_id,
+                    )
+                })
+                .unwrap_or_default();
+            self.status_banner = format!("Copied {} element(s)", self.clipboard_elements.len());
         } else if ctrl && ctx.input(|i| i.key_pressed(Key::V)) {
-            if let Some(mut copied) = self.clipboard_element.clone() {
-                self.record_mutation();
-                let new_id = self.project.alloc_id();
-                copied.id = new_id;
-                copied.x += 28.0;
-                copied.y += 28.0;
-                if let Some(page) = self.current_page_mut() {
-                    page.elements.push(copied);
-                    self.selected_id = Some(new_id);
-                    self.canvas_state.selected_ids = vec![new_id];
-                }
-            }
+            self.insert_copies(self.clipboard_elements.clone(), 28.0);
         } else if ctx.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace)) {
             self.delete_selected();
         } else if ctx.input(|i| i.key_pressed(Key::F5)) {
@@ -886,28 +878,46 @@ impl CanvasStudioApp {
         Ok(rec_path)
     }
 
-    fn duplicate_selected(&mut self) {
-        let Some(sel_id) = self.selected_id else {
+    fn insert_copies(&mut self, elements: Vec<CanvasElement>, offset: f32) {
+        if elements.is_empty() {
             return;
-        };
-        let cloned = self
-            .current_page()
-            .and_then(|p| p.elements.iter().find(|e| e.id == sel_id))
-            .cloned();
-        if let Some(mut dup) = cloned {
-            self.record_mutation();
-            let new_id = self.project.alloc_id();
-            dup.id = new_id;
-            dup.name = format!("{} Copy", dup.name);
-            dup.x += 30.0;
-            dup.y += 30.0;
-            if let Some(page) = self.current_page_mut() {
-                page.elements.push(dup);
-                self.selected_id = Some(new_id);
-                self.canvas_state.selected_ids = vec![new_id];
-                self.status_banner = "Duplicated element".to_string();
-            }
         }
+        self.record_mutation();
+        let copies = document_ops::fresh_copies(&mut self.project, &elements, offset, offset);
+        let ids: Vec<_> = copies.iter().map(|e| e.id).collect();
+        if let Some(page) = self.current_page_mut() {
+            page.elements.extend(copies);
+        }
+        self.selected_id = ids.last().copied();
+        self.canvas_state.selected_ids = ids;
+        self.status_banner = format!("Inserted {} copied element(s)", elements.len());
+    }
+
+    fn duplicate_selected(&mut self) {
+        let elements = self
+            .current_page()
+            .map(|p| {
+                document_ops::selected_elements(
+                    p,
+                    &self.canvas_state.selected_ids,
+                    self.selected_id,
+                )
+            })
+            .unwrap_or_default();
+        self.insert_copies(elements, 30.0);
+    }
+
+    fn insert_template_pages(&mut self, source: &Project) {
+        self.record_mutation();
+        let first = self.project.pages.len();
+        let pages = document_ops::fitted_pages(&mut self.project, source);
+        let count = pages.len();
+        self.project.pages.extend(pages);
+        self.current_page_idx = first.min(self.project.pages.len().saturating_sub(1));
+        self.selected_id = None;
+        self.canvas_state.reset_for_document();
+        self.status_banner =
+            format!("Inserted {count} page(s), fitted proportionally to this document");
     }
 
     fn delete_selected(&mut self) {
@@ -929,31 +939,57 @@ impl CanvasStudioApp {
     }
 
     fn move_selected_layer(&mut self, forward: bool) {
-        let Some(sel_id) = self.selected_id else {
+        let ids = self
+            .current_page()
+            .map(|p| {
+                document_ops::selection_ids(p, &self.canvas_state.selected_ids, self.selected_id)
+            })
+            .unwrap_or_default();
+        if ids.is_empty() {
             return;
-        };
+        }
         self.record_mutation();
         if let Some(page) = self.current_page_mut() {
-            if let Some(pos) = page.elements.iter().position(|e| e.id == sel_id) {
-                if forward && pos + 1 < page.elements.len() {
-                    page.elements.swap(pos, pos + 1);
-                } else if !forward && pos > 0 {
-                    page.elements.swap(pos, pos - 1);
+            if forward {
+                for i in (0..page.elements.len().saturating_sub(1)).rev() {
+                    if ids.contains(&page.elements[i].id) && !ids.contains(&page.elements[i + 1].id)
+                    {
+                        page.elements.swap(i, i + 1);
+                    }
+                }
+            } else {
+                for i in 1..page.elements.len() {
+                    if ids.contains(&page.elements[i].id) && !ids.contains(&page.elements[i - 1].id)
+                    {
+                        page.elements.swap(i, i - 1);
+                    }
                 }
             }
         }
     }
 
     fn toggle_selected_lock(&mut self) {
-        let Some(sel_id) = self.selected_id else {
+        let selected = self
+            .current_page()
+            .map(|p| {
+                document_ops::selected_elements(
+                    p,
+                    &self.canvas_state.selected_ids,
+                    self.selected_id,
+                )
+            })
+            .unwrap_or_default();
+        if selected.is_empty() {
             return;
-        };
+        }
         self.record_mutation();
-        if let Some(el) = self
-            .current_page_mut()
-            .and_then(|p| p.elements.iter_mut().find(|e| e.id == sel_id))
-        {
-            el.locked = !el.locked;
+        let lock = selected.iter().any(|e| !e.locked);
+        if let Some(page) = self.current_page_mut() {
+            for e in &mut page.elements {
+                if selected.iter().any(|s| s.id == e.id) {
+                    e.locked = lock;
+                }
+            }
         }
     }
 
@@ -1745,6 +1781,7 @@ impl CanvasStudioApp {
                         let ph = self.project.height;
                         if let Some(page) = self.project.pages.get_mut(self.current_page_idx) {
                             if let Some(el) = page.elements.iter_mut().find(|e| e.id == sel_id) {
+                                if el.locked { ui.disable(); }
                                 match &mut el.kind {
                                     ElementKind::Shape {
                                         shape_type,
@@ -2129,9 +2166,9 @@ impl CanvasStudioApp {
                                             *revision += 1;
                                         }
                                         if ui
-                                            .button("🔍 2x Bicubic + Sharpen")
+                                            .button("🔍 2× Bilinear + Sharpen")
                                             .on_hover_text(
-                                                "2x Catmull-Rom bicubic interpolation + unsharp mask",
+                                                "2× bilinear resampling and sharpening; does not restore missing detail",
                                             )
                                             .clicked()
                                         {
@@ -2142,7 +2179,7 @@ impl CanvasStudioApp {
                                             *raw_rgba = nbuf;
                                             *revision += 1;
                                         }
-                                        if ui.button("🧼 Patch Inpaint Center").clicked() {
+                                        if ui.button("🧼 Blend Centre Patch").clicked() {
                                             magic_erase_patch(
                                                 raw_rgba, *width_px, *height_px, 0.35, 0.35, 0.3,
                                                 0.3,
@@ -2356,17 +2393,10 @@ impl CanvasStudioApp {
                             let msg = format!("Loaded template '{}'", tpl.name);
                             self.request_replace_document(proj, None, msg);
                         }
-                        if ui.small_button("+ Add as New Page").clicked() {
-                            self.record_mutation();
-                            let tpl_proj = build_template_project(tpl.id);
-                            if let Some(mut first_page) = tpl_proj.pages.into_iter().next() {
-                                first_page.id = self.project.alloc_id();
-                                for el in &mut first_page.elements {
-                                    el.id = self.project.alloc_id();
-                                }
-                                self.project.pages.push(first_page);
-                                self.current_page_idx = self.project.pages.len() - 1;
-                            }
+                        if ui.small_button("+ Insert All Pages (Fit)")
+                            .on_hover_text("Fit every template page proportionally into this document; preserves its page background")
+                            .clicked() {
+                            self.insert_template_pages(&build_template_project(tpl.id));
                         }
                     });
                 });
@@ -2784,7 +2814,7 @@ impl CanvasStudioApp {
         }
 
         ui.add_space(14.0);
-        ui.strong("Built-In Studio Assets (Ready for Magic Cutout)");
+        ui.strong("Built-In Studio Assets (Ready for Edge-Colour Cutout)");
         ui.add_space(6.0);
 
         let assets_len = self.stock_assets.len();
@@ -2970,7 +3000,7 @@ impl CanvasStudioApp {
                             });
 
                             ui.add_space(6.0);
-                            if ui.button("🎨 Create Palette Composition").clicked() {
+                            if ui.button("🎨 Create Sampled-Colour Composition").clicked() {
                                 extract_req = Some((
                                     raw_rgba.clone(),
                                     *width_px,
@@ -3733,22 +3763,12 @@ impl CanvasStudioApp {
                         .save_file()
                     {
                         if let Some(page) = self.project.pages.get(self.current_page_idx) {
-                            let report=run_export_preflight(&self.project,self.export_dpi);
-                            let fatal:Vec<_>=report.issues.iter().filter(|i|i.severity==crate::model::pdf_export::PreflightSeverity::Error && (i.element_id==0 || i.page_index==self.current_page_idx)).map(|i|i.message.clone()).collect();
-                            if !fatal.is_empty() {self.status_banner=format!("SVG export blocked: {}",fatal.join("; "));return;}
-                            let svg = export_page_to_svg(
-                                page,
-                                self.project.width,
-                                self.project.height,
-                                self.export_transparent,
-                            );
-                            match std::fs::write(&path, svg) {
-                                Ok(_) => {
-                                    self.status_banner =
-                                        format!("Exported Vector SVG to {}", path.display())
-                                }
-                                Err(e) => self.status_banner = format!("SVG export error: {e}"),
-                            }
+                            let result = export_page_to_svg(page,self.project.width,self.project.height,self.export_transparent)
+                                .and_then(|svg|std::fs::write(&path,svg).map_err(|e|e.to_string()));
+                            self.status_banner=match result {
+                                Ok(())=>format!("Exported Vector SVG to {}",path.display()),
+                                Err(e)=>format!("SVG export error: {e}"),
+                            };
                         }
                     }
                 }
@@ -3768,14 +3788,11 @@ impl CanvasStudioApp {
                         .set_file_name("presentation_deck.html")
                         .save_file()
                     {
-                        let html = export_project_to_html_deck(&self.project);
-                        match std::fs::write(&path, html) {
-                            Ok(_) => {
-                                self.status_banner =
-                                    format!("Exported HTML5 Deck to {}", path.display())
-                            }
-                            Err(e) => self.status_banner = format!("HTML export error: {e}"),
-                        }
+                        self.status_banner=match export_project_to_html_deck(&self.project)
+                            .and_then(|html|std::fs::write(&path,html).map_err(|e|e.to_string())) {
+                            Ok(())=>format!("Exported HTML Deck to {}",path.display()),
+                            Err(e)=>format!("HTML export error: {e}"),
+                        };
                     }
                 }
             });
@@ -4051,7 +4068,7 @@ mod tests {
             },
         });
 
-        let svg = export_page_to_svg(&page, 400.0, 300.0, false);
+        let svg = export_page_to_svg(&page, 400.0, 300.0, false).unwrap();
         assert!(
             svg.contains("fill=\"none\""),
             "Transparent shape fill must emit fill=\"none\" in SVG"
@@ -4418,12 +4435,12 @@ mod tests {
         let proj = build_template_project("social_launch");
         let page = &proj.pages[0];
 
-        let svg_opaque = export_page_to_svg(page, proj.width, proj.height, false);
+        let svg_opaque = export_page_to_svg(page, proj.width, proj.height, false).unwrap();
         assert!(svg_opaque.contains("<svg"));
         assert!(svg_opaque.contains("FUTURE"));
         assert!(svg_opaque.contains("url(#page_bg_grad)"));
 
-        let svg_trans = export_page_to_svg(page, proj.width, proj.height, true);
+        let svg_trans = export_page_to_svg(page, proj.width, proj.height, true).unwrap();
         assert!(svg_trans.contains("<svg"));
         assert!(!svg_trans.contains("url(#page_bg_grad)"));
 
@@ -4435,7 +4452,7 @@ mod tests {
         assert_eq!(rgba_2x.get_pixel(0, 0).0[3], 0);
 
         let deck_proj = build_template_project("pitch_deck");
-        let html = export_project_to_html_deck(&deck_proj);
+        let html = export_project_to_html_deck(&deck_proj).unwrap();
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("class=\"slide active\""));
 

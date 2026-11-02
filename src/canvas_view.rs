@@ -42,6 +42,7 @@ pub struct CanvasInteractionState {
     pub drag_start_canvas_pos: Pos2,
     pub drag_orig_rect: Rect,
     pub drag_orig_rotation: f32,
+    pub drag_transform_elements: Vec<CanvasElement>,
     pub drag_group_origins: Vec<(u64, f32, f32)>,
     pub selected_ids: Vec<u64>,
     pub marquee_start: Option<Pos2>,
@@ -70,6 +71,7 @@ impl CanvasInteractionState {
             drag_start_canvas_pos: Pos2::ZERO,
             drag_orig_rect: Rect::NOTHING,
             drag_orig_rotation: 0.0,
+            drag_transform_elements: Vec::new(),
             drag_group_origins: Vec::new(),
             selected_ids: Vec::new(),
             marquee_start: None,
@@ -90,6 +92,7 @@ impl CanvasInteractionState {
         self.active_handle = None;
         self.dragging_element = false;
         self.drag_group_origins.clear();
+        self.drag_transform_elements.clear();
         self.selected_ids.clear();
         self.marquee_start = None;
         self.marquee_current = None;
@@ -384,16 +387,27 @@ pub fn render_interactive_canvas(
                     .iter()
                     .find(|e| e.id == sel_id)
                 {
-                    if !sel_el.locked {
+                    let members = crate::document_ops::selected_elements(
+                        &project.pages[current_page_idx],
+                        &state.selected_ids,
+                        Some(sel_id),
+                    );
+                    if !members.iter().any(|e| e.locked) {
+                        let bounds = if members.len() > 1 {
+                            crate::document_ops::bounds(&members).unwrap()
+                        } else {
+                            sel_el.rect()
+                        };
                         let screen_rect = Rect::from_min_max(
-                            to_screen(sel_el.x, sel_el.y),
-                            to_screen(sel_el.x + sel_el.width, sel_el.y + sel_el.height),
+                            to_screen(bounds.min.x, bounds.min.y),
+                            to_screen(bounds.max.x, bounds.max.y),
                         );
                         if let Some(handle) = hit_test_handles(screen_rect, spos) {
                             state.active_handle = Some(handle);
                             state.drag_start_canvas_pos = cpos;
-                            state.drag_orig_rect = sel_el.rect();
+                            state.drag_orig_rect = bounds;
                             state.drag_orig_rotation = sel_el.rotation;
+                            state.drag_transform_elements = members.clone();
                         }
                     }
                 }
@@ -447,7 +461,12 @@ pub fn render_interactive_canvas(
                         .iter()
                         .find(|e| e.id == hid)
                     {
-                        if !el.locked {
+                        if !el.locked
+                            && !project.pages[current_page_idx]
+                                .elements
+                                .iter()
+                                .any(|m| state.selected_ids.contains(&m.id) && m.locked)
+                        {
                             state.dragging_element = true;
                             state.drag_start_canvas_pos = cpos;
                             state.drag_orig_rect = el.rect();
@@ -530,7 +549,26 @@ pub fn render_interactive_canvas(
             let orig = state.drag_orig_rect;
 
             if let Some(handle) = state.active_handle {
-                if let Some(el) = project.pages[current_page_idx]
+                if state.drag_transform_elements.len() > 1 {
+                    let (target, degrees) = if handle == ResizeHandle::Rotate {
+                        let center = orig.center();
+                        let mut angle =
+                            (cpos.y - center.y).atan2(cpos.x - center.x).to_degrees() + 90.;
+                        if ui.input(|i| i.modifiers.shift) {
+                            angle = (angle / 15.).round() * 15.;
+                        }
+                        (orig, angle)
+                    } else {
+                        (group_resize_rect(orig, handle, delta), 0.)
+                    };
+                    crate::document_ops::transform_selection(
+                        &mut project.pages[current_page_idx],
+                        &state.drag_transform_elements,
+                        orig,
+                        target,
+                        degrees,
+                    );
+                } else if let Some(el) = project.pages[current_page_idx]
                     .elements
                     .iter_mut()
                     .find(|e| e.id == sel_id)
@@ -728,12 +766,27 @@ pub fn render_interactive_canvas(
             .iter()
             .find(|e| e.id == sel_id)
         {
+            let members = crate::document_ops::selection_ids(
+                &project.pages[current_page_idx],
+                &state.selected_ids,
+                Some(sel_id),
+            );
+            let locked = project.pages[current_page_idx]
+                .elements
+                .iter()
+                .any(|e| members.contains(&e.id) && e.locked);
+            let bounds = if members.len() > 1 {
+                crate::document_ops::selection_bounds(&project.pages[current_page_idx], &members)
+                    .unwrap()
+            } else {
+                sel_el.rect()
+            };
             let srect = Rect::from_min_max(
-                to_screen(sel_el.x, sel_el.y),
-                to_screen(sel_el.x + sel_el.width, sel_el.y + sel_el.height),
+                to_screen(bounds.min.x, bounds.min.y),
+                to_screen(bounds.max.x, bounds.max.y),
             );
 
-            let border_col = if sel_el.locked {
+            let border_col = if locked {
                 Color32::from_rgb(245, 158, 11)
             } else {
                 Color32::from_rgb(139, 92, 246) // Studio Purple #8B5CF6
@@ -741,7 +794,7 @@ pub fn render_interactive_canvas(
 
             painter.rect_stroke(srect, 2.0, Stroke::new(2.0_f32, border_col));
 
-            if !sel_el.locked {
+            if !locked {
                 for (_, hpos) in handle_positions(srect) {
                     painter.circle_filled(hpos, 5.5, Color32::WHITE);
                     painter.circle_stroke(hpos, 5.5, Stroke::new(2.0_f32, border_col));
@@ -759,8 +812,8 @@ pub fn render_interactive_canvas(
             // Dimensions badge at bottom-center of selection
             let dim_label = format!(
                 "{} x {}{}",
-                sel_el.width.round() as i32,
-                sel_el.height.round() as i32,
+                bounds.width().round() as i32,
+                bounds.height().round() as i32,
                 if sel_el.rotation.abs() > 0.5 {
                     format!(" • {:.0}°", sel_el.rotation)
                 } else {
@@ -816,7 +869,7 @@ pub fn render_interactive_canvas(
                                 {
                                     triggered_action = CanvasAction::SendBackward;
                                 }
-                                let lock_lbl = if sel_el.locked { "🔒" } else { "🔓" };
+                                let lock_lbl = if locked { "🔒" } else { "🔓" };
                                 if ui
                                     .small_button(lock_lbl)
                                     .on_hover_text("Toggle Lock")
@@ -844,6 +897,10 @@ pub fn render_interactive_canvas(
                 to_screen(edit_el.x, edit_el.y),
                 to_screen(edit_el.x + edit_el.width, edit_el.y + edit_el.height),
             );
+            if edit_el.locked {
+                state.inline_edit_id = None;
+                return triggered_action;
+            }
             if let ElementKind::Text { content, .. } = &mut edit_el.kind {
                 let mut close_inline = false;
                 egui::Area::new(Id::new(("canvas_inline_text_edit", edit_id)))
@@ -1959,4 +2016,64 @@ fn compute_animation_transform(
             ease,
         ),
     }
+}
+
+/// Group handles preserve aspect ratio; the opposite edge/corner remains fixed.
+fn group_resize_rect(original: Rect, handle: ResizeHandle, delta: Vec2) -> Rect {
+    let left = matches!(
+        handle,
+        ResizeHandle::Left | ResizeHandle::TopLeft | ResizeHandle::BottomLeft
+    );
+    let right = matches!(
+        handle,
+        ResizeHandle::Right | ResizeHandle::TopRight | ResizeHandle::BottomRight
+    );
+    let top = matches!(
+        handle,
+        ResizeHandle::Top | ResizeHandle::TopLeft | ResizeHandle::TopRight
+    );
+    let bottom = matches!(
+        handle,
+        ResizeHandle::Bottom | ResizeHandle::BottomLeft | ResizeHandle::BottomRight
+    );
+    let sx = 1.
+        + if left {
+            -delta.x
+        } else if right {
+            delta.x
+        } else {
+            0.
+        } / original.width().max(1.);
+    let sy = 1.
+        + if top {
+            -delta.y
+        } else if bottom {
+            delta.y
+        } else {
+            0.
+        } / original.height().max(1.);
+    let scale = if !(left || right) {
+        sy
+    } else if !(top || bottom) || (sx - 1.).abs() > (sy - 1.).abs() {
+        sx
+    } else {
+        sy
+    };
+    let scale = scale.max(16. / original.width().min(original.height()).max(1.));
+    let size = original.size() * scale;
+    let x = if left {
+        original.max.x - size.x
+    } else if right {
+        original.min.x
+    } else {
+        original.center().x - size.x / 2.
+    };
+    let y = if top {
+        original.max.y - size.y
+    } else if bottom {
+        original.min.y
+    } else {
+        original.center().y - size.y / 2.
+    };
+    Rect::from_min_size(egui::pos2(x, y), size)
 }
