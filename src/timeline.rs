@@ -634,10 +634,16 @@ pub fn apply(p: &mut Project, v: &Value) -> Result<(), String> {
             {
                 return Err("This clip has no attached source audio".into());
             }
-            let track = visual_track(t, "audio");
+            let track = t.alloc();
+            t.tracks.push(Track {
+                id: track.clone(),
+                name: "Detached source audio".into(),
+                kind: "audio".into(),
+                enabled: true,
+            });
             c.id = t.alloc();
             c.track = track;
-            c.name = format!("{} · audio", c.name);
+            c.name = "Detached source audio".into();
             c.design = None;
             c.text = None;
             c.caption = None;

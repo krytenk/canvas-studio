@@ -2,8 +2,9 @@
 
 ## 1.13.0 film foundation
 
-83 local Rust checks pass, including frame edits, source/envelope preservation,
-SRT Unicode/timing, identity/overflow rejection and native film undo/redo.
+84 local Rust checks pass, including frame edits, source/envelope preservation,
+SRT Unicode/timing, identity/overflow rejection, native film undo/redo and detaching dialogue while
+a music track is already occupied.
 The real STDIO media workflow passes decoded clip boundaries, a 48 kHz audio
 impulse (about 0.08 ms timing error in the tested fixture), exact eight-second
 video/audio metadata, identical audio across splits within fades, captions/frame

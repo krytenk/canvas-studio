@@ -14,7 +14,7 @@ const paragraphLabels={space_before:'Before (pt)',space_after:'After (pt)',first
 const geometryLabels={x:'X',y:'Y',width:'Width',height:'Height',rotation:'Rotation °'};
 function notice(message,error=false){$('message').textContent=message;$('message').classList.toggle('error',error);$('message').hidden=false;clearTimeout(notice.timer);if(!error)notice.timer=setTimeout(()=>$('message').hidden=true,6000);}
 async function api(path,options={}){
- const response=await fetch(path,{...options,headers:{'X-Canvas-Token':token,...(state?{'X-Canvas-Revision':String(state.revision),'X-Canvas-Document':state.document_id}:{}),...options.headers}});
+ const response=await fetch(path,{...options,headers:{'X-Canvas-Token':token,...(state?{'X-Canvas-Revision':String(state.revision),...(options.method==='POST'?{'X-Canvas-Document':state.document_id}:{})}:{}),...options.headers}});
  if(!response.ok){let error;try{error=await response.json();}catch{error={error:response.statusText};}throw Error(error.error||`Request failed (${response.status})`);}
  return response;
 }

@@ -103,3 +103,48 @@ fn native_film_commands_share_history_and_preserve_original_recovery() {
     assert!(app.perform_redo());
     assert!(app.project.production.timeline.enabled);
 }
+
+#[test]
+fn detaching_dialogue_creates_a_free_track_when_music_already_occupies_the_edit() {
+    let mut p = Project::default();
+    timeline::apply(
+        &mut p,
+        &json!({"action":"film_setup","width":320,"height":180,"fps":30,"duration":240}),
+    )
+    .unwrap();
+    let a = timeline::MediaAsset {
+        id: "b".repeat(64),
+        name: "Dialogue".into(),
+        extension: "mp4".into(),
+        kind: "video".into(),
+        bytes: 100,
+        duration_us: 8_000_000,
+        width: 320,
+        height: 180,
+        has_audio: true,
+        sample_rate: 48000,
+        channels: 2,
+    };
+    p.production.timeline.assets.insert(a.id.clone(), a.clone());
+    timeline::apply(
+        &mut p,
+        &json!({"action":"film_add","asset":a.id,"start":0,"duration":240}),
+    )
+    .unwrap();
+    let source = p.production.timeline.clips[0].id.clone();
+    timeline::apply(
+        &mut p,
+        &json!({"action":"film_track","kind":"audio","name":"Music"}),
+    )
+    .unwrap();
+    let music = p.production.timeline.tracks.last().unwrap().id.clone();
+    timeline::apply(
+        &mut p,
+        &json!({"action":"film_add","asset":a.id,"track":music,"start":0,"duration":240}),
+    )
+    .unwrap();
+    timeline::apply(&mut p, &json!({"action":"film_detach_audio","id":source})).unwrap();
+    assert!(!p.production.timeline.clips[0].audio.enabled);
+    assert_ne!(p.production.timeline.clips.last().unwrap().track, music);
+    assert!(p.production.timeline.clips.last().unwrap().audio.enabled);
+}
