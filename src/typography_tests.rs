@@ -8,12 +8,7 @@ fn font_project() -> Project {
             .unwrap();
     let id = font.id;
     project.imported_fonts.push(font);
-    let mut text = build_template_project("festival_poster").pages[0]
-        .elements
-        .iter()
-        .find(|e| matches!(e.kind, ElementKind::Text { .. }))
-        .unwrap()
-        .clone();
+    let mut text = templates::make_basic_text_element(project.alloc_id());
     text.x = 60.;
     text.y = 60.;
     text.width = 600.;

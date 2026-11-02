@@ -33,11 +33,7 @@ fn single_file_projects_move_with_images_fonts_styles_and_output_settings() {
             .unwrap();
     let id = font.id;
     project.imported_fonts.push(font);
-    let mut text = build_template_project("festival_poster")
-        .pages
-        .remove(0)
-        .elements
-        .remove(2);
+    let mut text = templates::make_basic_text_element(project.alloc_id());
     text.x = 60.;
     text.y = 60.;
     text.width = 600.;

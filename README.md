@@ -4,8 +4,9 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.9.0**, with imported fonts, rich paragraphs, portable
-projects, linked collections/CSV production, books, checked word searches and local browser editing.
+Current development: **1.10.0**, with imported fonts, rich paragraphs, portable
+projects, linked collections/CSV production, books, checked word searches and local browser editing. An 18-design visual catalog includes editable Instagram
+carousels/stories and YouTube thumbnails/channel artwork.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
 the [practical workflow guide](docs/PRINT-STUDIO-GUIDE.md).
 

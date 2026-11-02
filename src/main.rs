@@ -24,6 +24,8 @@ mod puzzle_production;
 #[cfg(test)]
 mod puzzle_tests;
 mod puzzle_ui;
+mod studio_catalog;
+mod studio_ui;
 mod template_library;
 mod templates;
 #[cfg(test)]
@@ -180,6 +182,9 @@ struct CanvasStudioApp {
     library_name: String,
     library_tags: String,
     library_previews: std::collections::HashMap<String, egui::TextureHandle>,
+    studio_previews: std::collections::HashMap<String, egui::TextureHandle>,
+    studio_search: String,
+    studio_category: String,
     production_key: String,
     shared_style_name: String,
     batch_editable: bool,
@@ -258,6 +263,9 @@ impl CanvasStudioApp {
             library_name: String::new(),
             library_tags: String::new(),
             library_previews: Default::default(),
+            studio_previews: Default::default(),
+            studio_search: String::new(),
+            studio_category: "All templates".into(),
             production_key: String::new(),
             shared_style_name: String::new(),
             batch_editable: false,
@@ -1524,10 +1532,10 @@ impl CanvasStudioApp {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     let home_btn = egui::Button::new(
-                        RichText::new("✦ Canvas Studio")
+                        RichText::new("Canvas Studio")
                             .strong()
                             .size(16.0)
-                            .color(Color32::from_rgb(0, 245, 212)),
+                            .color(Color32::from_rgb(126, 218, 190)),
                     )
                     .fill(Color32::from_rgb(28, 32, 46))
                     .rounding(8.0);
@@ -1543,7 +1551,7 @@ impl CanvasStudioApp {
                     }
 
                     if ui
-                        .selectable_label(self.screen == WorkspaceScreen::HomeHub, "🏠 Home Hub")
+                        .selectable_label(self.screen == WorkspaceScreen::HomeHub, "Home")
                         .clicked()
                     {
                         self.screen = WorkspaceScreen::HomeHub;
@@ -1551,7 +1559,7 @@ impl CanvasStudioApp {
                     if ui
                         .selectable_label(
                             self.screen == WorkspaceScreen::StudioEditor,
-                            "🎨 Studio Editor",
+                            "Studio",
                         )
                         .clicked()
                     {
@@ -1562,14 +1570,14 @@ impl CanvasStudioApp {
 
                     // Undo / Redo with revision-accurate dirty reconciliation
                     if ui
-                        .add_enabled(self.history.can_undo(), egui::Button::new("↩ Undo"))
+                        .add_enabled(self.history.can_undo(), egui::Button::new("Undo"))
                         .on_hover_text("Undo (Ctrl+Z)")
                         .clicked()
                     {
                         self.queued_history=-1;
                     }
                     if ui
-                        .add_enabled(self.history.can_redo(), egui::Button::new("↪ Redo"))
+                        .add_enabled(self.history.can_redo(), egui::Button::new("Redo"))
                         .on_hover_text("Redo (Ctrl+Y)")
                         .clicked()
                     {
@@ -1589,7 +1597,7 @@ impl CanvasStudioApp {
                             ui.label(
                                 RichText::new("Print & Digital Format Presets")
                                     .strong()
-                                    .color(Color32::from_rgb(0, 245, 212)),
+                                    .color(Color32::from_rgb(126, 218, 190)),
                             );
                             for fmt in DesignFormat::all_presets() {
                                 let (fw, fh) = fmt.dimensions();
@@ -1633,11 +1641,11 @@ impl CanvasStudioApp {
 
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                         let exp_btn = egui::Button::new(
-                            RichText::new("⬇ Print PDF / Export")
+                            RichText::new("Export")
                                 .strong()
                                 .color(Color32::WHITE),
                         )
-                        .fill(Color32::from_rgb(125, 42, 232))
+                        .fill(Color32::from_rgb(39, 111, 94))
                         .rounding(8.0);
                         if ui.add(exp_btn).clicked() {
                             self.pdf_range_end = self.project.pages.len().max(1);
@@ -1645,11 +1653,11 @@ impl CanvasStudioApp {
                         }
 
                         let pres_btn = egui::Button::new(
-                            RichText::new("▶ Present")
+                            RichText::new("Present")
                                 .strong()
                                 .color(Color32::from_rgb(15, 23, 42)),
                         )
-                        .fill(Color32::from_rgb(0, 245, 212))
+                        .fill(Color32::from_rgb(126, 218, 190))
                         .rounding(8.0);
                         if ui
                             .add(pres_btn)
@@ -1668,7 +1676,7 @@ impl CanvasStudioApp {
                             self.queued_save=Some(true);
                         }
                         if ui
-                            .button("💾 Save")
+                            .button("Save")
                             .on_hover_text("Save project (Ctrl+S). Keep the JSON file and its assets folder together when moving a project.")
                             .clicked()
                         {
@@ -1686,7 +1694,7 @@ impl CanvasStudioApp {
                                 }
                             }
                         }
-                        if ui.button("📂 Open").clicked() {
+                        if ui.button("Open").clicked() {
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("Canvas Project", &["json","canvas"])
                                 .pick_file()
@@ -1732,11 +1740,11 @@ impl CanvasStudioApp {
                     if ui
                         .add(
                             egui::Button::new(
-                                RichText::new("💾 Save & Continue")
+                                RichText::new("Save & Continue")
                                     .strong()
                                     .color(Color32::from_rgb(15, 23, 42)),
                             )
-                            .fill(Color32::from_rgb(0, 245, 212)),
+                            .fill(Color32::from_rgb(126, 218, 190)),
                         )
                         .clicked()
                     {
@@ -1775,14 +1783,14 @@ impl CanvasStudioApp {
         ScrollArea::vertical().show(ui, |ui| {
             ui.add_space(16.0);
             egui::Frame::none()
-                .fill(Color32::from_rgb(26, 20, 56))
+                .fill(Color32::from_rgb(28, 37, 44))
                 .rounding(18.0)
                 .inner_margin(Margin::symmetric(32.0, 28.0))
-                .stroke(Stroke::new(1.5_f32, Color32::from_rgb(0, 196, 204)))
+                .stroke(Stroke::new(1.5_f32, Color32::from_rgb(58, 156, 130)))
                 .show(ui, |ui| {
                     ui.vertical_centered(|ui| {
                         ui.label(
-                            RichText::new("What will you design today?")
+                            RichText::new("Your ideas. One studio.")
                                 .size(36.0)
                                 .strong()
                                 .color(Color32::WHITE),
@@ -1850,7 +1858,7 @@ impl CanvasStudioApp {
 
             ui.add_space(24.0);
             ui.label(
-                RichText::new("✨ Templates for Absolutely Anything")
+                RichText::new("Made for your next project")
                     .size(22.0)
                     .strong()
                     .color(Color32::WHITE),
@@ -1925,7 +1933,7 @@ impl CanvasStudioApp {
                             ui.label(
                                 RichText::new("✏ Freehand Draw Active")
                                     .strong()
-                                    .color(Color32::from_rgb(0, 245, 212)),
+                                    .color(Color32::from_rgb(126, 218, 190)),
                             );
                             if ui.button("Exit Draw Mode").clicked() {
                                 self.canvas_state.drawing_mode = false;
@@ -2549,32 +2557,9 @@ impl CanvasStudioApp {
                     .show(ui, |ui| {
                         ui.vertical_centered(|ui| {
                             for tab in DockTab::all() {
-                                let (icon, label) = tab.icon_and_label();
                                 let active = self.dock_open && self.active_dock == *tab;
-                                let bg = if active {
-                                    Color32::from_rgb(45, 52, 78)
-                                } else {
-                                    Color32::TRANSPARENT
-                                };
-                                let fg = if active {
-                                    Color32::from_rgb(0, 245, 212)
-                                } else {
-                                    Color32::from_rgb(175, 184, 201)
-                                };
-
-                                let btn = egui::Button::new(
-                                    RichText::new(format!(
-                                        "{icon}\n{}",
-                                        if label == "Elements" { "Shapes" } else { label }
-                                    ))
-                                    .size(11.5)
-                                    .color(fg),
-                                )
-                                .fill(bg)
-                                .rounding(8.0)
-                                .min_size(Vec2::new(56.0, 48.0));
-
-                                if ui.add(btn).clicked() {
+                                let response = crate::studio_ui::tool_button(ui, *tab, active);
+                                if response.clicked() {
                                     if self.active_dock == *tab && self.dock_open {
                                         self.dock_open = false;
                                     } else {
@@ -2713,69 +2698,32 @@ impl CanvasStudioApp {
     }
 
     fn render_dock_templates(&mut self, ui: &mut Ui) {
-        ui.heading("📐 Design Templates & Print Collections");
+        ui.heading("Design library");
         ui.label(
-            RichText::new("Start with a built-in template or import your own layout JSON.")
-                .size(12.0)
-                .color(Color32::GRAY),
+            RichText::new("Campaigns, stories and print. Thoughtfully started.")
+                .size(11.5)
+                .color(Color32::from_rgb(153, 166, 178)),
         );
-        ui.add_space(8.0);
-
-        if ui.button("📂 Import Layout JSON...").clicked() {
+        ui.add_space(12.);
+        self.render_design_gallery(ui);
+        ui.add_space(16.);
+        ui.collapsing("My saved masters", |ui| {
+            self.render_template_library(ui);
+        });
+        self.render_print_guides(ui);
+        if ui.button("Import layout JSON").clicked() {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("Layout JSON", &["json"])
                 .pick_file()
             {
                 match import_layout_json(&path) {
-                    Ok(proj) => {
-                        let title = proj.title.clone();
-                        let msg = format!("Imported layout '{}'", title);
-                        self.request_replace_document(proj, None, msg);
+                    Ok(project) => {
+                        self.request_replace_document(project, None, "Imported layout".into())
                     }
-                    Err(e) => self.status_banner = format!("Layout JSON import error: {e}"),
+                    Err(error) => self.status_banner = error,
                 }
             }
         }
-
-        ui.separator();
-        self.render_template_library(ui);
-        self.render_print_guides(ui);
-        ui.separator();
-        ui.strong("Built-In Studio Templates");
-        ui.add_space(6.0);
-
-        for tpl in available_templates() {
-            egui::Frame::none()
-                .fill(Color32::from_rgb(33, 37, 49))
-                .rounding(10.0)
-                .inner_margin(Margin::same(10.0))
-                .stroke(Stroke::new(1.0_f32, to_egui_color(tpl.accent)))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(to_egui_color(tpl.accent), "●");
-                        ui.strong(tpl.name);
-                    });
-                    ui.label(
-                        RichText::new(tpl.subtitle)
-                            .size(11.5)
-                            .color(Color32::LIGHT_GRAY),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui.small_button("Replace Project").clicked() {
-                            let proj = build_template_project(tpl.id);
-                            let msg = format!("Loaded template '{}'", tpl.name);
-                            self.request_replace_document(proj, None, msg);
-                        }
-                        if ui.small_button("+ Insert All Pages (Fit)")
-                            .on_hover_text("Fit every template page proportionally into this document; preserves its page background")
-                            .clicked() {
-                            self.insert_template_pages(&build_template_project(tpl.id));
-                        }
-                    });
-                });
-            ui.add_space(8.0);
-        }
-
         ui.separator();
         ui.strong("Custom Canvas Size (px / mm / in)");
         ui.horizontal(|ui| {
@@ -3196,7 +3144,7 @@ impl CanvasStudioApp {
                         .strong()
                         .color(Color32::WHITE),
                 )
-                .fill(Color32::from_rgb(125, 42, 232)),
+                .fill(Color32::from_rgb(39, 111, 94)),
             )
             .clicked()
         {
@@ -3244,7 +3192,7 @@ impl CanvasStudioApp {
                 "Local deterministic image filters, edge-color cutout, palette extraction, and copy templates.",
             )
             .size(12.0)
-            .color(Color32::from_rgb(0, 245, 212)),
+            .color(Color32::from_rgb(126, 218, 190)),
         );
         ui.add_space(10.0);
 
@@ -4175,7 +4123,7 @@ impl CanvasStudioApp {
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.strong(format!(
-                        "▶ Presenting: {} — Slide {} / {}",
+                        "Presenting: {} — Slide {} / {}",
                         self.project.title,
                         self.current_page_idx + 1,
                         self.project.pages.len()
@@ -4239,7 +4187,7 @@ impl CanvasStudioApp {
                         w_mm, h_mm, w_pt, h_pt
                     ))
                     .strong()
-                    .color(Color32::from_rgb(0, 245, 212)),
+                    .color(Color32::from_rgb(126, 218, 190)),
                 );
                 ui.label(format!(
                     "Raster Output at {} DPI: {} × {} px",
@@ -4390,7 +4338,7 @@ impl CanvasStudioApp {
                             ))
                             .strong(),
                         )
-                        .fill(Color32::from_rgb(0, 196, 204)),
+                        .fill(Color32::from_rgb(58, 156, 130)),
                     )
                     .clicked()
                 {
@@ -4465,7 +4413,7 @@ impl CanvasStudioApp {
                         egui::Button::new(
                             RichText::new("📐 Export Scalable Vector SVG (.svg)").strong(),
                         )
-                        .fill(Color32::from_rgb(125, 42, 232)),
+                        .fill(Color32::from_rgb(39, 111, 94)),
                     )
                     .clicked()
                 {
@@ -4527,8 +4475,12 @@ fn apply_canvas_studio_theme(ctx: &Context) {
     visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(30, 33, 44);
     visuals.widgets.inactive.bg_fill = Color32::from_rgb(36, 40, 54);
     visuals.widgets.hovered.bg_fill = Color32::from_rgb(52, 58, 82);
-    visuals.widgets.active.bg_fill = Color32::from_rgb(0, 196, 204);
-    visuals.selection.bg_fill = Color32::from_rgb(125, 42, 232);
+    visuals.widgets.active.bg_fill = Color32::from_rgb(58, 156, 130);
+    visuals.selection.bg_fill = Color32::from_rgb(39, 111, 94);
+    ctx.style_mut(|s| {
+        s.spacing.item_spacing = Vec2::new(7., 6.);
+        s.visuals.widgets.inactive.rounding = Rounding::same(5.);
+    });
     visuals.window_rounding = Rounding::same(12.0);
     ctx.set_visuals(visuals);
 }
@@ -4703,9 +4655,9 @@ mod tests {
     use crate::model::ImageCrop;
 
     #[test]
-    fn test_all_seven_templates_and_magic_resize() {
+    fn test_studio_catalog_and_magic_resize() {
         let templates = available_templates();
-        assert_eq!(templates.len(), 7);
+        assert_eq!(templates.len(), 18);
         for tpl in &templates {
             let proj = build_template_project(tpl.id);
             let (ew, eh) = tpl.format.dimensions();

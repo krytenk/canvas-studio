@@ -24,16 +24,16 @@ function elem(tag,attributes={},text){const e=document.createElement(tag);for(co
 function button(text,action,attributes={}){const b=elem('button',{type:'button',...attributes},text);b.addEventListener('click',action);return b;}
 function current(){return state?.elements.find(e=>e.id===selected);}
 function tab(name){for(const e of document.querySelectorAll('[data-tab]')){e.classList.toggle('active',e.dataset.tab===name);e.setAttribute('aria-selected',String(e.dataset.tab===name));}for(const n of ['fields','layers','edit'])$('tab-'+n).hidden=n!==name;}
-function select(id){selected=id;renderSelection();renderLayers();renderTargets();tab('edit');}
+function select(id){document.body.classList.add('inspector-open');selected=id;renderSelection();renderLayers();renderTargets();tab('edit');}
 async function refresh(){
  const response=await api(`/api/state?page=${page}`);state=await response.json();page=state.page;if(!state.elements.some(e=>e.id===selected))selected=null;
  $('document-title').value=state.title;$('page-title').value=state.pages[page].title;$('page-count').textContent=state.pages.length;
- $('session-state').textContent=`Local engine · ${state.version} · ${state.recovery?'Recovery saved on this computer':'Session only'}${pending?' · Download to keep a copy':''}`;
+ $('session-state').textContent=`${state.recovery?'Recovery saved on this device':'Session only'}${pending?' · Save a copy when ready':''}`;
  $('dimensions').textContent=`${state.width_mm.toFixed(1)} × ${state.height_mm.toFixed(1)} mm · page ${page+1} of ${state.pages.length}`;
  $('undo').disabled=!state.undo;$('redo').disabled=!state.redo;$('up-page').disabled=page===0;$('down-page').disabled=page===state.pages.length-1;$('delete-page').disabled=state.pages.length===1;
- renderPages();renderFields();renderLayers();renderSelection();renderTargets();fit();await renderPreview();
+ renderPages();renderFields();renderLayers();renderSelection();renderTargets();fit();await renderPreview();if(window.studioReady)window.studioReady();
 }
-function renderPages(){const root=$('pages');root.replaceChildren();state.pages.forEach((p,index)=>{const b=button('',()=>serial(async()=>{page=index;selected=null;await refresh();}),{class:'page-card'+(index===page?' active':''),'aria-label':`Page ${index+1}: ${p.title}`});b.append(elem('span',{class:'page-index'},index+1),elem('span',{class:'page-label'},p.title));root.append(b);});root.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'nearest'});}
+function renderPages(){const root=$('pages');root.replaceChildren();state.pages.forEach((p,index)=>{const b=button('',()=>serial(async()=>{page=index;selected=null;await refresh();}),{class:'page-card'+(index===page?' active':''),'aria-label':`Page ${index+1}: ${p.title}`});b.append(elem('span',{class:'page-index'},index+1),elem('span',{class:'page-label'},p.title));root.append(b);});root.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'nearest'});if(window.studioEnhancePages)window.studioEnhancePages();}
 function renderFields(){const root=$('fields');root.replaceChildren();if(!state.fields.length){root.append(elem('p',{class:'muted'},'This design has no linked fields. Select a text or photo layer to edit it directly. Create shared fields in the desktop Production panel.'));return;}
  for(const field of state.fields){const form=elem('form',{class:'field-row'});const label=elem('label',{},field.key+(field.required?' · required':''));if(field.image){form.append(label,elem('p',{class:'muted'},field.value||'No photo selected'),button('Choose photo…',()=>choosePhoto({key:field.key})));}else{const input=elem('input',{'aria-label':field.key,value:field.value,name:'value'});label.append(input);form.append(label,elem('button',{type:'submit'},'Apply across collection'));form.addEventListener('submit',event=>{event.preventDefault();command({action:'field',key:field.key,value:input.value},'field:'+field.key);});}restoreDraft(form,'field:'+field.key);root.append(form);}
 }

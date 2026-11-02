@@ -181,8 +181,8 @@ fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request
         return Err("Upload exceeds 128 MiB".into());
     }
     if let Some((host, token)) = gate {
-        let static_page =
-            method == "GET" && ["/", "/app.js", "/style.css"].contains(&path.as_str());
+        let static_page = method == "GET"
+            && ["/", "/app.js", "/studio.js", "/style.css"].contains(&path.as_str());
         if headers.get("host").map(String::as_str) != Some(host)
             || headers
                 .get("origin")
@@ -571,13 +571,7 @@ fn edit(project: &mut Project, v: &Value) -> Result<(), String> {
             if page >= project.pages.len() {
                 return Err("Page outside document".into());
             }
-            let mut e = templates::build_template_project("festival_poster")
-                .pages
-                .remove(0)
-                .elements
-                .into_iter()
-                .find(|e| matches!(e.kind, ElementKind::Text { .. }))
-                .ok_or("Text prototype unavailable")?;
+            let mut e = templates::make_basic_text_element(project.next_id);
             e.id = project.alloc_id();
             e.name = "New text".into();
             e.x = 50.;
@@ -645,6 +639,23 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         .map_err(|_| "Invalid page")?;
     if req.method == "GET" {
         return match base {
+            "/api/templates" => Ok(Response::value(
+                crate::studio_catalog::catalog(),
+                s.revision,
+            )),
+            "/api/template-preview" => {
+                let id = query(&req.path, "id").ok_or("Missing template")?;
+                Ok(Response::bytes(
+                    "image/png",
+                    crate::studio_catalog::template_preview(&id)?,
+                    s.revision,
+                ))
+            }
+            "/api/thumbnail" => Ok(Response::bytes(
+                "image/png",
+                crate::studio_catalog::thumbnail(&s.project, page, 240)?,
+                s.revision,
+            )),
             "/api/state" => Ok(Response::value(state(s, page), s.revision)),
             "/api/preview.svg" => {
                 let proof = production::resolve(&s.project, false)?;
@@ -720,6 +731,16 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                     return Err("Unknown template".into());
                 }
                 s.commit(templates::build_template_project(key))?;
+            } else if action == "insert_template" {
+                let key = string(&value, "template")?;
+                if !templates::available_templates().iter().any(|t| t.id == key) {
+                    return Err("Unknown template".into());
+                }
+                let mut project = s.project.clone();
+                let source = templates::build_template_project(key);
+                let pages = document_ops::fitted_pages(&mut project, &source);
+                project.pages.extend(pages);
+                s.commit(project)?;
             } else if action == "new" {
                 s.commit(Project::default())?;
             } else {
@@ -836,6 +857,10 @@ fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Sessi
             "/" => Some((
                 "text/html; charset=utf-8",
                 include_bytes!("../web/index.html").as_slice(),
+            )),
+            "/studio.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_bytes!("../web/studio.js").as_slice(),
             )),
             "/app.js" => Some((
                 "text/javascript; charset=utf-8",

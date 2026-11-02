@@ -30,7 +30,7 @@ ui.click(240,49);ui.chord('Control_L','a');ui.type_text('Native smoke test');ui.
 ui.chord('Control_L','z');ui.screenshot(sys.argv[2]+'/undo.png');ui.chord('Control_L','y');ui.chord('Control_L','s');time.sleep(.4)
 for _ in range(10):ui.click(34,530,5)
 ui.click(30,451);ui.screenshot(sys.argv[2]+'/book.png');ui.click(325,617);ui.screenshot(sys.argv[2]+'/next-page.png')
-ui.click(950,50);ui.screenshot(sys.argv[2]+'/export.png')
+ui.click(980,50);ui.screenshot(sys.argv[2]+'/export.png')
 ''')
         subprocess.run([sys.executable,str(driver),str(ROOT/'scripts'),str(qa)],env=env,check=True)
         result=subprocess.check_output([str(binary),'--verify-project',str(working)],text=True)

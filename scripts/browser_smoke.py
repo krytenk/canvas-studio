@@ -108,6 +108,15 @@ def run(binary,chrome):
             with page.expect_file_chooser() as chooser:page.get_by_role('button',name='+ Photo',exact=True).click()
             chooser.value.set_files(qa/'portrait.jpg')
             page.wait_for_function(f"() => state.elements.length==={count+1}")
+            page.get_by_role('button',name='Design library',exact=True).click()
+            page.wait_for_selector('.template-card img[src]')
+            page.screenshot(path=qa/'studio-gallery.png',full_page=True)
+            page.get_by_label('Search design library',exact=True).fill('carousel')
+            page.get_by_role('button',name='Preview Small Shifts',exact=True).click()
+            assert '5 pages' in page.locator('#template-spec').inner_text()
+            page.get_by_role('button',name='Add pages to document',exact=True).click()
+            page.wait_for_function("() => state.pages.length===10")
+            page.get_by_role('button',name='Document pages',exact=True).click()
             page.set_viewport_size({'width':700,'height':900});page.screenshot(path=qa/'browser-narrow.png',full_page=True)
             assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'Narrow layout overflows'
             assert not errors,errors

@@ -42,8 +42,7 @@ fn every_production_template_round_trips_and_exports() {
                 .unwrap()
                 .save(root.join(format!("{}-{i}.png", template.id)))
                 .unwrap();
-            let svg = export_page_to_svg(&project.pages[i], project.width, project.height, false)
-                .unwrap();
+            let svg = crate::exporter::export_project_page_to_svg(&project, i, false).unwrap();
             fs::write(root.join(format!("{}-{i}.svg", template.id)), svg).unwrap();
         }
         let render = Command::new("pdftoppm")

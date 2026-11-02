@@ -13,65 +13,10 @@ pub struct TemplateDescriptor {
     pub accent: ColorRgba,
 }
 
+#[path = "studio_templates.rs"]
+mod studio_templates;
 pub fn available_templates() -> Vec<TemplateDescriptor> {
-    vec![
-        TemplateDescriptor {
-            id: "pitch_deck",
-            name: "Visual Suite Keynote Deck",
-            category: "Presentation",
-            subtitle: "2-Slide Presentation with Chart & Metrics",
-            format: DesignFormat::Presentation,
-            accent: rgb(0, 196, 204),
-        },
-        TemplateDescriptor {
-            id: "social_launch",
-            name: "Neon Product Drop Post",
-            category: "Social Media",
-            subtitle: "Square 1080x1080 Instagram Launch Graphic",
-            format: DesignFormat::InstagramPost,
-            accent: rgb(125, 42, 232),
-        },
-        TemplateDescriptor {
-            id: "yt_thumbnail",
-            name: "Bold Creator Thumbnail",
-            category: "YouTube",
-            subtitle: "Bold 1280x720 Thumbnail with Badge & Burst",
-            format: DesignFormat::YouTubeThumbnail,
-            accent: rgb(255, 71, 87),
-        },
-        TemplateDescriptor {
-            id: "festival_poster",
-            name: "Modern Design Summit Poster",
-            category: "Poster",
-            subtitle: "Print-Ready Editorial Event Poster",
-            format: DesignFormat::Poster,
-            accent: rgb(255, 165, 2),
-        },
-        TemplateDescriptor {
-            id: "story_reel",
-            name: "Vertical Flash Sale Story",
-            category: "Story / Reel",
-            subtitle: "9:16 Mobile Story with Promo Code Pill",
-            format: DesignFormat::InstagramStory,
-            accent: rgb(255, 92, 138),
-        },
-        TemplateDescriptor {
-            id: "infographic_report",
-            name: "Annual Growth Infographic",
-            category: "Infographic",
-            subtitle: "Data-Driven Infographic with Charts & Table",
-            format: DesignFormat::Infographic,
-            accent: rgb(16, 185, 129),
-        },
-        TemplateDescriptor {
-            id: "brand_logo",
-            name: "Geometric Tech Emblem Logo",
-            category: "Logo",
-            subtitle: "500x500 Clean Vector-Style Brand Mark",
-            format: DesignFormat::Logo,
-            accent: rgb(56, 189, 248),
-        },
-    ]
+    studio_templates::catalog()
 }
 
 fn make_shape(
@@ -174,6 +119,9 @@ fn make_text(
 }
 
 pub fn build_template_project(template_id: &str) -> Project {
+    if let Some(project) = studio_templates::build(template_id) {
+        return project;
+    }
     let project = match template_id {
         "pitch_deck" => build_pitch_deck_template(),
         "social_launch" => build_social_launch_template(),
@@ -1419,4 +1367,28 @@ fn production_defaults(mut project: Project) -> Project {
     }
     project.next_id = next;
     project
+}
+
+/// Neutral text insertion and test fixture, independent of the current template art direction.
+pub fn make_basic_text_element(id: u64) -> CanvasElement {
+    let mut e = make_text(
+        id,
+        "Text",
+        60.,
+        60.,
+        600.,
+        180.,
+        "Your text here",
+        FontFamily::Sans,
+        28.,
+        rgb(28, 34, 40),
+        false,
+        TextAlign::Left,
+        TextEffect::None,
+    );
+    e.animation = ElementAnimation::None;
+    if let ElementKind::Text { letter_spacing, .. } = &mut e.kind {
+        *letter_spacing = 0.;
+    }
+    e
 }

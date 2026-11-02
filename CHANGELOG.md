@@ -1,5 +1,13 @@
 # Changes
 
+## 1.10.0 — a visual design studio
+
+- Replaced the starter catalog with 18 editable designs across Instagram, YouTube, print, presentation, identity and data formats (27 pages). Existing project and legacy template identifiers remain supported.
+- Added native artwork thumbnails, catalog search/categories, full browser previews and inserting template pages into an existing design.
+- Refreshed both interfaces with a quieter charcoal/teal palette, consistent vector tool icons, clearer hierarchy and responsive browser panels.
+- New text starts with neutral paragraph styling instead of inheriting a poster headline’s tight tracking.
+- 74 Rust checks and both isolated browser/native-window workflows pass, including multi-page carousel insertion and narrow browser layouts.
+
 ## 1.9.0 — local browser editing
 
 - Added `--serve-browser` and `run-browser.sh`: a bundled browser interface backed by the native document/font/export engine, with no account, subscription or JavaScript runtime requirement.

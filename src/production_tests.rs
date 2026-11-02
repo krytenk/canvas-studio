@@ -2,11 +2,7 @@ use super::*;
 use std::{fs, process::Command};
 
 fn text_element(project: &mut Project, content: &str) -> CanvasElement {
-    let mut text = build_template_project("festival_poster")
-        .pages
-        .remove(0)
-        .elements
-        .remove(2);
+    let mut text = templates::make_basic_text_element(project.alloc_id());
     text.id = project.alloc_id();
     text.x = 60.;
     text.y = 80.;
