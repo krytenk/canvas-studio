@@ -19,4 +19,4 @@ label{font-size:11px}.tab-content p,.muted{font-size:11px}.template-card-name{fo
 
 .field-row textarea{margin:3px 0 8px;min-height:42px}
 /* Keep the current layout readable, and put single-layer styling before arrangement tools. */
-#campaign-variants button:disabled{opacity:1;cursor:default}#tab-edit{display:flex;flex-direction:column}#text-form,#shape-form,#image-editor,#selection-empty{order:0}#layout-selection{order:1}#geometry-form{order:2}#tab-edit .font-import{order:3}
+#campaign-variants button:disabled{opacity:1;cursor:default}
