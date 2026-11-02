@@ -11,3 +11,6 @@ label{font-size:11px}.tab-content p,.muted{font-size:11px}.template-card-name{fo
 
 /* Feedback stays clear of the design controls. */
 #message{top:auto;left:auto;right:20px;bottom:42px;max-width:min(520px,calc(100vw - 90px));z-index:20}
+
+/* The rail never scrolls sideways when a vertical scrollbar is present. */
+.studio-rail{overflow-x:hidden;overflow-y:auto;scrollbar-width:thin}.rail-tool{max-width:100%;flex-shrink:0}
