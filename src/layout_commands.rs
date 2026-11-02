@@ -54,6 +54,9 @@ fn rgb_value(v: &Value) -> Result<ColorRgba, String> {
     Ok(rgb((n >> 16) as u8, (n >> 8) as u8, n as u8))
 }
 pub fn supports(action: &str) -> bool {
+    if crate::timeline::supports(action) {
+        return true;
+    }
     matches!(
         action,
         "selection_move"
@@ -77,6 +80,9 @@ pub fn supports(action: &str) -> bool {
 }
 pub fn apply(p: &mut Project, v: &Value) -> Result<(), String> {
     let action = text(v, "action")?;
+    if crate::timeline::supports(action) {
+        return crate::timeline::apply(p, v);
+    }
     match action {
         "campaign_create" => {
             *p = campaign::starter();

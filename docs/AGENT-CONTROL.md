@@ -116,7 +116,8 @@ in the same batch use `id:"$hero"`; the result maps aliases to actual layer IDs.
 The discoverable schema describes each command. Shared typography styles are
 preserved; edit their definitions on desktop, or change content only through MCP.
 Imports support the same static editable-embedding TrueType restrictions as the
-app. Videos, audio, timeline keyframes and 3D scenes are not MCP tools yet.
+app. Media import, video/audio timeline commands and asynchronous jobs are
+available in 1.13; keyframed animation and 3D remain future work.
 
 ## Protocol and verification
 
@@ -140,7 +141,7 @@ and a real design task in the selected client remain the integration acceptance.
 
 ## 1.12 campaign and layout commands
 
-The 11 tools now expose campaign work through `studio_edit`. `campaign_create`
+The original 11 tools expose campaign work through `studio_edit`. `campaign_create`
 starts four purpose-composed formats. `variant_save(name)` duplicates the active
 layout with fresh identities; `variant_activate(name)` switches it. The document
 handle remains the campaign's handle and revisions still guard every change.
@@ -168,3 +169,12 @@ See the [campaign workflow](CAMPAIGN-STUDIO.md) for ownership rules and limits.
 
 Browser-service revision epochs change on restart, so cached pre-restart revisions
 cannot silently become current again. Treat revisions as opaque comparison values.
+
+## 1.13 film tools
+
+The adapter now exposes **13 tools**. Media import uses `studio_import` with
+`kind: "media"`. `studio_edit` supports the shared `film_*` commands.
+`studio_media_render` queues a revisioned movie/frame/proxy; `studio_media_job`
+reports progress, cancels or saves the completed result inside the workspace.
+See [Film studio](FILM-STUDIO.md) for timing units, exact commands, controls,
+resource limits and the offline media acceptance/demo scripts.

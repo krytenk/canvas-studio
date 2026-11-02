@@ -70,6 +70,7 @@ pub struct ProductionSettings {
     pub book: crate::book_production::BookSettings,
     pub puzzles: Vec<crate::puzzle_production::WordSearchProduct>,
     pub studio: crate::campaign::StudioSettings,
+    pub timeline: crate::timeline::Timeline,
 }
 
 impl ProductionSettings {

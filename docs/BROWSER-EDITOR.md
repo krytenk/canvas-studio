@@ -102,3 +102,12 @@ The visual catalog includes Instagram/YouTube designs and multi-page sets.
 Native shape type, fill/gradient, outline and corner-radius controls are editable
 in the browser. Live coding-agent edits and preview/export are available through
 the [local MCP adapter](AGENT-CONTROL.md).
+
+## Film workspace · 1.13
+
+The Film rail tool opens a dedicated media library, rendered video monitor,
+clip inspector and multi-track timeline. Drag to move or trim, split at an integer
+playhead, mix sound, edit captions and render a synchronized preview. Jobs retain
+their source revision; edits mark older previews stale. Save editable projects
+with originals embedded. See the [complete film guide](FILM-STUDIO.md) for
+FFmpeg requirements, delivery, resource limits and native playback differences.

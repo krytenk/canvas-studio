@@ -1,5 +1,27 @@
 # Canvas Studio validation
 
+## 1.13.0 film foundation
+
+83 local Rust checks pass, including frame edits, source/envelope preservation,
+SRT Unicode/timing, identity/overflow rejection and native film undo/redo.
+The real STDIO media workflow passes decoded clip boundaries, a 48 kHz audio
+impulse (about 0.08 ms timing error in the tested fixture), exact eight-second
+video/audio metadata, identical audio across splits within fades, captions/frame
+review, proxies, cancelled partial-output cleanup, wrong-document/workspace/no-
+overwrite guards and a cold-cache portable restore. A deliberately damaged
+original fails verification and is repaired by reopening the portable project.
+
+A moving 24 fps source split on frame 37 of a 30 fps timeline retains an identical
+decoded frame sequence; resetting the FPS sampling phase at the split originally
+failed this check and was corrected with a persisted source anchor/frame offset.
+The existing MCP and campaign CLI workflows also pass. GitHub CI repeats browser
+and native workflows, plus the new isolated Film interface workflow. The 30-
+second licensed demonstration is built through MCP by `make_film_demo.py`.
+
+See [Film studio](FILM-STUDIO.md) for dependencies, limits and native/browser
+playback differences. These are targeted acceptance checks, not proof of every
+codec, every host platform, zero-latency native AV editing, or a full NLE suite.
+
 ## 1.12.0 campaign/layout integration
 
 79 local Rust checks pass. New coverage exercises four independent layouts,

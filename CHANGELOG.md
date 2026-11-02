@@ -1,5 +1,15 @@
 # Changes
 
+## 1.13.0 — film, sound and captions
+
+- Added a persisted frame-based multi-track timeline with verified local originals, disposable proxies/posters/waveforms, trim/split, source audio detachment, gain/fades, manual captions/SRT and native editable design overlays.
+- Added a dedicated browser Film workspace with direct clip movement/edge trimming, framing/sound/caption inspectors, synchronized rendered MP4 review and stale-preview feedback. Native controls share the command engine; native AV review opens in ffplay.
+- Added asynchronous, document-owned FFmpeg snapshot jobs with progress, cancellation, full-size MP4 delivery, frame review and storage reporting/finished-job clearing. Original media and edits survive render failure/cancellation.
+- Split clips preserve both audio envelopes and source FPS sampling phase, including 24 fps footage on a 30 fps output timeline.
+- Portable film projects use a guarded version-3 envelope containing SHA-256-verified originals. Local recovery references the private cache. Existing static/campaign formats remain supported.
+- Expanded MCP to 13 tools, media import and typed film edits, asynchronous render/proxy requests, scoped job status/cancel/save. Added decoded-frame/audio, cold-cache restore, corruption, cancel and UI regression workflows plus a reproducible licensed 30-second editing demo.
+- HyperFrames animation, keyframed effects, automatic transcription and 3D editing remain future work.
+
 ## 1.12.0 — linked campaign production
 
 - Added portable campaigns with separately composed Instagram post/story, YouTube thumbnail and A4 layouts, shared copy, named colour links and a project library of reusable editable groups.

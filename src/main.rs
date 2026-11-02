@@ -16,6 +16,9 @@ mod layout_commands;
 #[cfg(test)]
 mod library_tests;
 mod magic_studio;
+mod media_service;
+mod media_store;
+mod media_ui;
 mod model;
 mod paragraph_layout;
 #[cfg(test)]
@@ -33,6 +36,9 @@ mod studio_catalog;
 mod studio_ui;
 mod template_library;
 mod templates;
+mod timeline;
+#[cfg(test)]
+mod timeline_tests;
 #[cfg(test)]
 mod typography_tests;
 #[cfg(test)]
@@ -90,6 +96,7 @@ enum DockTab {
     Production,
     Book,
     Puzzles,
+    Film,
     AppInfo,
 }
 
@@ -108,6 +115,7 @@ impl DockTab {
             DockTab::Production,
             DockTab::Book,
             DockTab::Puzzles,
+            DockTab::Film,
             DockTab::AppInfo,
         ]
     }
@@ -126,6 +134,7 @@ impl DockTab {
             DockTab::Production => ("▤", "Production"),
             DockTab::Book => ("▥", "Book"),
             DockTab::Puzzles => ("▦", "Puzzles"),
+            DockTab::Film => ("▷", "Film"),
             DockTab::AppInfo => ("ⓘ", "About"),
         }
     }
@@ -230,6 +239,7 @@ struct CanvasStudioApp {
     frame_snapshot_cache: crate::model::SnapshotCache,
     queued_save: Option<bool>,
     queued_history: i8,
+    film_ui: crate::media_ui::FilmUi,
 }
 
 impl CanvasStudioApp {
@@ -314,6 +324,7 @@ impl CanvasStudioApp {
             frame_snapshot_cache: Default::default(),
             queued_save: None,
             queued_history: 0,
+            film_ui: Default::default(),
         };
         app.recovery_available = app.latest_available_recovery_path().is_some();
         app.refresh_template_library();
@@ -1144,7 +1155,7 @@ impl CanvasStudioApp {
     fn write_recovery_snapshot(&mut self) -> Result<PathBuf, String> {
         self.project.recovery_origin_path = self.current_project_path.clone();
         let rec_path = self.recovery_path_for_document(&self.project.document_id);
-        save_project_json(&self.project, &rec_path)?;
+        crate::project_package::save_recovery(&self.project, &rec_path)?;
         self.active_recovery_path = Some(rec_path.clone());
         self.recovery_available = true;
         Ok(rec_path)
@@ -1437,6 +1448,10 @@ impl CanvasStudioApp {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none().fill(Color32::from_rgb(24, 25, 28)))
                     .show(ctx, |ui| {
+                        if self.active_dock == DockTab::Film {
+                            self.render_film_workspace(ui);
+                            return;
+                        }
                         let available = ui.available_size();
                         if available != self.last_viewport_size && self.auto_fit_canvas {
                             self.pending_canvas_fit = true;
@@ -2621,6 +2636,7 @@ impl CanvasStudioApp {
                     DockTab::Production => self.render_production(ui),
                     DockTab::Book => self.render_book(ui),
                     DockTab::Puzzles => self.render_puzzles(ui),
+                    DockTab::Film => self.render_film_dock(ui),
                     DockTab::AppInfo => self.render_dock_app_info(ui),
                 });
             });

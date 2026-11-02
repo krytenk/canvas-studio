@@ -28,6 +28,7 @@ impl Drop for Scratch {
 }
 fn validate_document(project: &Project) -> Result<(), String> {
     crate::campaign::validate(project)?;
+    crate::timeline::validate(&project.production.timeline)?;
     if project.pages.is_empty()
         || project.pages.len() > 1000
         || [
@@ -72,7 +73,7 @@ impl Session {
         validate_document(&candidate)?;
         crate::imported_fonts::register_project(&candidate)?;
         if let Some(path) = &self.recovery {
-            crate::project_package::save(&candidate, path)?;
+            crate::project_package::save_recovery(&candidate, path)?;
         }
         self.undo.push(self.project.clone());
         if self.undo.len() > 20 {
@@ -89,7 +90,7 @@ impl Session {
             return Err("No history in that direction".into());
         };
         if let Some(path) = &self.recovery {
-            crate::project_package::save(&candidate, path)?;
+            crate::project_package::save_recovery(&candidate, path)?;
         }
         let prior = std::mem::replace(&mut self.project, candidate);
         if redo {
@@ -190,6 +191,7 @@ fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request
                 "/studio.js",
                 "/layout.js",
                 "/bundle.js",
+                "/film.js",
                 "/style.css",
             ]
             .contains(&path.as_str());
@@ -264,7 +266,7 @@ fn send(stream: &mut TcpStream, r: Response) {
         .download
         .map(|n| format!("Content-Disposition: attachment; filename=\"{n}\"\r\n"))
         .unwrap_or_default();
-    let header=format!("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCross-Origin-Resource-Policy: same-origin\r\nX-Canvas-Revision: {}\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n{}Connection: close\r\n\r\n",r.status,reason,r.mime,r.body.len(),r.revision,download);
+    let header=format!("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCross-Origin-Resource-Policy: same-origin\r\nX-Canvas-Revision: {}\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n{}Connection: close\r\n\r\n",r.status,reason,r.mime,r.body.len(),r.revision,download);
     let _ = stream.set_write_timeout(Some(Duration::from_secs(60)));
     let _ = stream
         .write_all(header.as_bytes())
@@ -765,7 +767,13 @@ fn state(s: &Session, page: usize) -> Value {
             .iter()
             .map(|f| json!({"id":family(FontFamily::Imported(f.id)),"name":f.name})),
     );
-    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p)})
+    let mut timeline = serde_json::to_value(&p.production.timeline).unwrap();
+    for (i, c) in p.production.timeline.clips.iter().enumerate() {
+        if let Some(st) = &c.caption {
+            timeline["clips"][i]["caption"]["family"] = json!(family(st.family));
+        }
+    }
+    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p),"timeline":timeline})
 }
 fn studio_state(p: &Project) -> Value {
     let s = &p.production.studio;
@@ -832,6 +840,67 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         }
         let read_project = alternate.as_ref().unwrap_or(&s.project);
         return match base {
+            "/api/film/storage" => Ok(Response::value(crate::media_service::storage(), s.revision)),
+            "/api/film/jobs" => Ok(Response::value(
+                crate::media_service::jobs(&s.project.document_id)?,
+                s.revision,
+            )),
+            "/api/film/doctor" => Ok(Response::value(
+                crate::media_service::dependencies(),
+                s.revision,
+            )),
+            "/api/film/job" => Ok(Response::value(
+                crate::media_service::status(
+                    &query(&req.path, "id").ok_or("Missing job")?,
+                    &s.project.document_id,
+                )?,
+                s.revision,
+            )),
+            "/api/film/srt" => {
+                let mut r = Response::bytes(
+                    "application/x-subrip",
+                    crate::timeline::srt(&s.project.production.timeline).into_bytes(),
+                    s.revision,
+                );
+                r.download = Some("captions.srt");
+                Ok(r)
+            }
+            "/api/film/output" => {
+                let id = query(&req.path, "id").ok_or("Missing job")?;
+                let path = crate::media_service::output(&id, &s.project.document_id)?;
+                let image = path.extension().is_some_and(|e| e == "png");
+                let mut r = Response::bytes(
+                    if image { "image/png" } else { "video/mp4" },
+                    fs::read(path).map_err(|e| e.to_string())?,
+                    s.revision,
+                );
+                r.download = Some(if image { "frame.png" } else { "film.mp4" });
+                Ok(r)
+            }
+            "/api/film/cache" => {
+                let id = query(&req.path, "asset").ok_or("Missing asset")?;
+                let a = s
+                    .project
+                    .production
+                    .timeline
+                    .assets
+                    .get(&id)
+                    .ok_or("Media not found")?;
+                let kind = query(&req.path, "kind").ok_or("Missing cache type")?;
+                if kind != "poster" && kind != "wave" {
+                    return Err("Choose poster or wave".into());
+                }
+                let path = crate::media_store::cached(a, &kind)?;
+                Ok(Response::bytes(
+                    if kind == "poster" {
+                        "image/jpeg"
+                    } else {
+                        "image/png"
+                    },
+                    fs::read(path).map_err(|_| "Build a proxy to create the poster/waveform")?,
+                    s.revision,
+                ))
+            }
             "/api/templates" => Ok(Response::value(
                 crate::studio_catalog::catalog(),
                 s.revision,
@@ -952,6 +1021,74 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         return Ok(r);
     }
     match base {
+        "/api/film/clear-jobs" => {
+            let count = crate::media_service::clear_finished(&s.project.document_id)?;
+            return Ok(Response::value(json!({"cleared":count}), s.revision));
+        }
+        "/api/film/render" | "/api/film/proxy" | "/api/film/cancel" => {
+            let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
+            if base == "/api/film/cancel" {
+                crate::media_service::cancel(
+                    v["id"].as_str().ok_or("Missing job")?,
+                    &s.project.document_id,
+                )?;
+                return Ok(Response::value(
+                    json!({"cancel_requested":true}),
+                    s.revision,
+                ));
+            }
+            let job = if base == "/api/film/proxy" {
+                let a = s
+                    .project
+                    .production
+                    .timeline
+                    .assets
+                    .get(v["asset"].as_str().ok_or("Missing asset")?)
+                    .ok_or("Media not found")?;
+                crate::media_service::proxy(a, &s.project.document_id, s.revision)?
+            } else {
+                crate::media_service::start(
+                    &s.project,
+                    s.revision,
+                    v["mode"].as_str().ok_or("Missing mode")?,
+                    v["frame"].as_u64(),
+                )?
+            };
+            return Ok(Response::value(
+                json!({"id":job,"source_revision":s.revision}),
+                s.revision,
+            ));
+        }
+        "/api/film/import" => {
+            let name = query(&req.path, "name").ok_or("Missing filename")?;
+            if name.contains(['/', '\\']) {
+                return Err("Use a filename without folders".into());
+            }
+            let scratch = Scratch::new()?;
+            let path = scratch.0.join(&name);
+            fs::write(&path, &req.body).map_err(|e| e.to_string())?;
+            let asset = crate::media_store::import(&path, &name)?;
+            let mut candidate = s.project.clone();
+            candidate
+                .production
+                .timeline
+                .assets
+                .insert(asset.id.clone(), asset.clone());
+            s.commit(candidate)?;
+            s.last_actor = "browser".into();
+            return Ok(Response::value(
+                json!({"asset":asset,"revision":s.revision,"document_id":s.project.document_id}),
+                s.revision,
+            ));
+        }
+        "/api/film/srt" => {
+            let mut candidate = s.project.clone();
+            crate::timeline::import_srt(
+                &mut candidate,
+                std::str::from_utf8(&req.body).map_err(|_| "Use UTF-8 SRT")?,
+            )?;
+            s.commit(candidate)?;
+        }
         "/api/command" => {
             let value: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
             let action = string(&value, "action")?;
@@ -1165,6 +1302,10 @@ fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Sessi
             "/" => Some((
                 "text/html; charset=utf-8",
                 include_bytes!("../web/index.html").as_slice(),
+            )),
+            "/film.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_bytes!("../web/film.js").as_slice(),
             )),
             "/bundle.js" => Some((
                 "text/javascript; charset=utf-8",

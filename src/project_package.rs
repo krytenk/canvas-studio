@@ -19,6 +19,10 @@ struct Envelope {
     assets: BTreeMap<String, String>,
     #[serde(default)]
     required_features: Vec<String>,
+    #[serde(default)]
+    media: BTreeMap<String, String>,
+    #[serde(default)]
+    linked_media: bool,
 }
 
 struct Scratch(PathBuf);
@@ -44,6 +48,12 @@ pub fn is_package(path: &Path) -> bool {
 }
 
 pub fn save(project: &Project, path: &Path) -> Result<(), String> {
+    save_mode(project, path, true)
+}
+pub fn save_recovery(project: &Project, path: &Path) -> Result<(), String> {
+    save_mode(project, path, false)
+}
+fn save_mode(project: &Project, path: &Path, embed: bool) -> Result<(), String> {
     let scratch = Scratch::new()?;
     let manifest = scratch.0.join("project.canvas.json");
     crate::exporter::save_project_manifest(project, &manifest)?;
@@ -59,17 +69,35 @@ pub fn save(project: &Project, path: &Path) -> Result<(), String> {
             );
         }
     }
+    let mut media = BTreeMap::new();
+    if embed {
+        for a in project.production.timeline.assets.values() {
+            let path = crate::media_store::verify(a)?;
+            media.insert(
+                a.id.clone(),
+                base64::engine::general_purpose::STANDARD
+                    .encode(fs::read(path).map_err(|e| e.to_string())?),
+            );
+        }
+    }
+    let mut features = Vec::new();
+    if project.production.studio.active() {
+        features.push("studio-campaign-v1".into());
+    }
+    if project.production.timeline.active() {
+        features.push("video-timeline-v1".into());
+    }
     let envelope = Envelope {
-        version: if project.production.studio.active() {
+        version: if project.production.timeline.active() {
+            3
+        } else if project.production.studio.active() {
             2
         } else {
             1
         },
-        required_features: if project.production.studio.active() {
-            vec!["studio-campaign-v1".into()]
-        } else {
-            vec![]
-        },
+        required_features: features,
+        media,
+        linked_media: !embed,
         project: fs::read_to_string(manifest).map_err(|e| e.to_string())?,
         assets,
     };
@@ -127,13 +155,13 @@ pub fn load(path: &Path) -> Result<Project, String> {
         return Err("Unpacked project exceeds the size limit".into());
     }
     let envelope: Envelope = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if ![1, 2].contains(&envelope.version)
+    if ![1, 2, 3].contains(&envelope.version)
         || envelope.assets.len() > 10_000
         || envelope
             .required_features
             .iter()
-            .any(|f| f != "studio-campaign-v1")
-        || (envelope.version == 2 && envelope.required_features.is_empty())
+            .any(|f| f != "studio-campaign-v1" && f != "video-timeline-v1")
+        || (envelope.version >= 2 && envelope.required_features.is_empty())
     {
         return Err("Unsupported portable project version or asset count".into());
     }
@@ -160,7 +188,29 @@ pub fn load(path: &Path) -> Result<Project, String> {
     }
     let manifest = scratch.0.join("project.canvas.json");
     fs::write(&manifest, envelope.project).map_err(|e| e.to_string())?;
-    crate::exporter::load_project_json(&manifest)
+    let project = crate::exporter::load_project_json(&manifest)?;
+    if project.production.timeline.active()
+        && (envelope.version != 3
+            || !envelope
+                .required_features
+                .iter()
+                .any(|f| f == "video-timeline-v1"))
+    {
+        return Err("Film project requires version 3 and video-timeline-v1 support".into());
+    }
+    if !envelope.linked_media {
+        for a in project.production.timeline.assets.values() {
+            let encoded = envelope
+                .media
+                .get(&a.id)
+                .ok_or("Portable movie is missing an original media payload")?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .map_err(|e| e.to_string())?;
+            crate::media_store::install(a, &bytes)?;
+        }
+    }
+    Ok(project)
 }
 
 #[cfg(test)]
@@ -173,6 +223,8 @@ mod tests {
         let bad = Envelope {
             version: 1,
             required_features: vec![],
+            media: BTreeMap::new(),
+            linked_media: false,
             project: "{}".into(),
             assets: BTreeMap::from([("../outside.png".into(), String::new())]),
         };

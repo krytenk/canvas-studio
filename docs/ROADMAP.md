@@ -25,8 +25,8 @@ working live-browser STDIO MCP adapter. See [agent control](AGENT-CONTROL.md).
 
 Next: shared layout commands and campaign components/brand tokens; then a real
 media timeline and audio/proxy pipeline; then a deterministic HyperFrames
-adapter; then practical optional Three.js product mockups. Video, HyperFrames
-rendering and 3D editing are planned work, not current app capabilities. Each
+adapter; then practical optional Three.js product mockups. Video tracks and rendered AV previews are implemented in 1.13; HyperFrames
+rendering and 3D editing remain planned work. Each
 stage has an acceptance workflow in the review. Local storage is sufficient;
 remote hosting remains a separate decision.
 
@@ -39,3 +39,14 @@ preview/export and campaign ZIP delivery preserve the live editing state.
 Reusable instances keep independent geometry; live definition overrides remain
 future work. The next implementation milestone is C: persisted video/audio
 tracks, proxies, trim/split, gain/fades and captions before effects or 3D.
+
+### Stage C — implemented in 1.13
+
+[Film studio](FILM-STUDIO.md) adds persisted media tracks, verified originals and
+proxies, trim/split, audio gain/fades, captions/SRT, native design overlays and
+cancellable snapshot previews/exports. The browser reviews rendered picture and
+sound together; native playback uses an external ffplay window. A real 30-second
+licensed film demonstration and deterministic decoded frame/audio checks cover
+the acceptance workflow. The next stage is D: a deterministic HyperFrames
+adapter with editable motion, seekable frame review and a render/source manifest.
+Three.js remains stage E; no hosting or paid services were added.

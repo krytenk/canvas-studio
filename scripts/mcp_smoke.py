@@ -52,7 +52,7 @@ def run(binary):
         c=Client(workspace,connection);clients.append(c)
         assert c.rpc('tools/list',modern=False)['error']['code']==-32602
         assert c.rpc('server/discover')['result']['supportedVersions']==['2026-07-28']
-        response=c.rpc('tools/list');assert len(response['result']['tools'])==11
+        response=c.rpc('tools/list');assert len(response['result']['tools'])==13
         assert token not in json.dumps(response)
         assert c.rpc('tools/call',{'name':'unknown','arguments':{}})['error']['code']==-32602
         bad=c.rpc('ping',{'_meta':{}}) # rpc adds the valid per-request metadata
@@ -120,7 +120,7 @@ def run(binary):
         assert legacy.rpc('initialize',{'protocolVersion':'2025-11-25','capabilities':{},'clientInfo':{'name':'legacy-check','version':'1'}},modern=False)['result']['protocolVersion']=='2025-11-25'
         assert 'resultType' not in legacy.rpc('tools/list',modern=False)['result']
         assert legacy.call('studio_document',modern=False)['title']=='Agent campaign proof'
-        report={'tools':11,'templates':18,'protocols':['2026-07-28','2025-11-25'],'atomic_rollback_dry_run_undo':'passed','explicit_handles_fresh_client':'passed','preview_pdf_png_portable_cold_load':'passed','fonts_photos':'passed','stale_revision_wrong_document':'passed','workspace_traversal_symlink_and_no_overwrite':'passed','token_not_in_results':'passed'}
+        report={'tools':13,'templates':18,'protocols':['2026-07-28','2025-11-25'],'atomic_rollback_dry_run_undo':'passed','explicit_handles_fresh_client':'passed','preview_pdf_png_portable_cold_load':'passed','fonts_photos':'passed','stale_revision_wrong_document':'passed','workspace_traversal_symlink_and_no_overwrite':'passed','token_not_in_results':'passed'}
         (qa/'report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
     finally:
         for client in clients:client.close()
