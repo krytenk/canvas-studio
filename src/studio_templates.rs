@@ -400,9 +400,9 @@ pub(super) fn build(id: &str) -> Option<Project> {
                 &mut p,
                 &mut a,
                 "Orbital accent",
-                w * 0.63,
+                w * 0.72,
                 h * 0.04,
-                w * 0.42,
+                w * 0.22,
                 LIME,
             );
             rect(
@@ -433,9 +433,9 @@ pub(super) fn build(id: &str) -> Option<Project> {
                 &mut a,
                 "Launch headline",
                 w * 0.06,
-                h * 0.23,
+                h * 0.30,
                 w * 0.88,
-                h * 0.47,
+                h * 0.43,
                 "THE FUTURE\nLOOKS\nGOOD.",
                 w * 0.12,
                 PAPER,
