@@ -1,0 +1,24 @@
+{
+  "name": "Studio Notes",
+  "stem": "studio-notes",
+  "w": 793.7008,
+  "h": 1122.5197,
+  "pages": [
+    {
+      "title": "Your next idea",
+      "w": 793.7008,
+      "h": 1122.5197,
+      "bg": "#FAF7EF",
+      "ops": [
+        {"kind": "text", "x": 64, "y": 62, "w": 660, "h": 32, "text": "C A N V A S   S T U D I O", "size": 16, "font": "sansb", "color": "#23534D"},
+        {"kind": "rect", "x": 64, "y": 122, "w": 665, "h": 2, "fill": "#AABBAE"},
+        {"kind": "text", "x": 64, "y": 170, "w": 665, "h": 100, "text": "Your next idea", "size": 52, "font": "serif", "color": "#23534D"},
+        {"kind": "text", "x": 64, "y": 310, "w": 600, "h": 120, "text": "A fresh page, a clear thought, and room to make it your own.", "size": 25, "font": "sans", "color": "#35433D"},
+        {"kind": "rect", "x": 64, "y": 500, "w": 665, "h": 360, "fill": "#E3ECE2", "radius": 12},
+        {"kind": "text", "x": 95, "y": 540, "w": 590, "h": 60, "text": "Notes and possibilities", "size": 26, "font": "serif", "color": "#23534D"},
+        {"kind": "text", "x": 95, "y": 620, "w": 570, "h": 150, "text": "Edit these words, change the colours, and add your own images.\n\nSave a personal copy before you begin.", "size": 19, "font": "sans", "color": "#35433D"},
+        {"kind": "text", "x": 64, "y": 995, "w": 665, "h": 35, "text": "A4 example layout / Native editable text and shapes", "size": 13, "font": "sans", "color": "#536A60"}
+      ]
+    }
+  ]
+}
