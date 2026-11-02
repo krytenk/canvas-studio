@@ -72,6 +72,10 @@ fn fifty_page_workbook_reorders_numbers_and_reopens_as_a_portable_project() {
             |e| matches!(&e.kind,ElementKind::Text{content,..}if content.contains("Updated master"))
         ));
     }
+    let report = run_export_preflight(&reopened, 96);
+    assert!(!report.issues.iter().any(|i| i.category == "safe_area"
+        && ["Master header", "Master footer", "Automatic page number"]
+            .contains(&i.element_name.as_str())));
     let pdf = root.join("workbook.pdf");
     export_project_to_pdf(
         &reopened,

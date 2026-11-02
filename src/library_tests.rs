@@ -197,3 +197,75 @@ fn print_panels_render_without_dirtying_the_document() {
         assert!(!app.dirty);
     }
 }
+
+#[test]
+fn minimum_window_fits_the_page_and_long_books_keep_navigation_bounded() {
+    let mut app = CanvasStudioApp::new_headless_with_recovery_dir(Some(
+        std::env::temp_dir().join(model::generate_document_id()),
+    ));
+    for i in 1..100 {
+        let id = app.project.alloc_id();
+        app.project
+            .pages
+            .push(CanvasPage::new(id, format!("Page {i}")));
+    }
+    let ctx = Context::default();
+    for _ in 0..3 {
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(1024., 680.),
+                )),
+                ..Default::default()
+            },
+            |ctx| app.update_ui(ctx),
+        );
+    }
+    assert!(!app.pending_canvas_fit);
+    assert!(app.project.height * app.canvas_state.zoom < app.last_viewport_size.y);
+    assert!(app.project.width * app.canvas_state.zoom < app.last_viewport_size.x);
+    let _ = ctx.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                Vec2::new(1280., 900.),
+            )),
+            ..Default::default()
+        },
+        |ctx| app.update_ui(ctx),
+    );
+    let _ = ctx.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                Vec2::new(1024., 680.),
+            )),
+            ..Default::default()
+        },
+        |ctx| app.update_ui(ctx),
+    );
+    assert!(app.project.height * app.canvas_state.zoom < app.last_viewport_size.y);
+    assert_eq!(app.project.pages.len(), 100);
+    assert!(!app.dirty);
+}
+#[test]
+fn page_duplication_remaps_groups_and_new_documents_request_a_fresh_fit() {
+    let mut app = CanvasStudioApp::new_headless_with_recovery_dir(Some(
+        std::env::temp_dir().join(model::generate_document_id()),
+    ));
+    app.project = build_template_project("brand_logo");
+    let group = app.project.alloc_id();
+    for element in &mut app.project.pages[0].elements {
+        element.group_id = Some(group);
+    }
+    let old_ids: Vec<_> = app.project.pages[0].elements.iter().map(|e| e.id).collect();
+    app.duplicate_book_page(0);
+    assert!(app.project.pages[1]
+        .elements
+        .iter()
+        .all(|e| !old_ids.contains(&e.id) && e.group_id != Some(group)));
+    app.pending_canvas_fit = false;
+    app.replace_document(Project::default(), None);
+    assert!(app.pending_canvas_fit);
+}

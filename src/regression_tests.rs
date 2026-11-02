@@ -937,3 +937,43 @@ fn same_frame_typing_save_undo_and_open_do_not_lose_edits() {
     assert!(!a.dirty);
     assert!(!a.history.can_redo() || a.perform_redo());
 }
+
+#[test]
+fn released_modifier_in_the_same_frame_does_not_swallow_save() {
+    let dir = workspace("quick-save");
+    let mut a = app(&dir);
+    a.current_project_path = Some(dir.join("quick.canvas"));
+    a.record_mutation();
+    a.project.title = "Fast shortcut saved".into();
+    let ctx = Context::default();
+    ui_frame(
+        &mut a,
+        &ctx,
+        vec![
+            egui::Event::Key {
+                key: Key::S,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers {
+                    ctrl: true,
+                    command: true,
+                    ..Default::default()
+                },
+            },
+            egui::Event::Key {
+                key: Key::S,
+                physical_key: None,
+                pressed: false,
+                repeat: false,
+                modifiers: Default::default(),
+            },
+        ],
+        Default::default(),
+    );
+    assert_eq!(
+        load_project_json(&dir.join("quick.canvas")).unwrap().title,
+        "Fast shortcut saved"
+    );
+    assert!(!a.dirty);
+}

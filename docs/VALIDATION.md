@@ -1,5 +1,24 @@
 # Canvas Studio validation
 
+## 1.8.1 native desktop validation
+
+Launched the real egui desktop executable on the Wayland desktop through X11.
+Visual inspection at 1408×680 exposed inaccessible rail tools and initial page
+cropping. Wayland blocked synthetic input, so repeatable native-window interactions
+ran on an isolated Xvfb X11 display with separate application data and a copied
+project. No existing user projects were changed.
+
+Native interactions verified 1024×680 layout, resizing with Fit retained, title
+editing, quick Ctrl+S, save/reopen, undo/redo, scrolling to Book/Puzzles, book page
+selection and the export/preflight dialog. Screenshots and the copied project are
+kept locally under `qa/desktop/`; `scripts/native_ui.py` records the X11 driver.
+A rapid modifier-release save failure was reproduced and fixed.
+
+66 release tests pass, including same-frame modifier release, bounded 100-page
+navigation, initial/resized fit, group identities and book header/folio safe areas.
+The release build passes. This does not certify every native dialog, every desktop
+backend, a real printer, or a full-resolution artwork stress workload.
+
 ## 1.8.0 local validation
 
 63 release checks pass, including 180 seed/difficulty combinations, deterministic

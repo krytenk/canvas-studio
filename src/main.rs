@@ -210,6 +210,8 @@ struct CanvasStudioApp {
     recovery_dir_override: Option<PathBuf>,
     last_save_error: Option<String>,
     last_viewport_size: Vec2,
+    pending_canvas_fit: bool,
+    auto_fit_canvas: bool,
     frame_snapshot_cache: crate::model::SnapshotCache,
     queued_save: Option<bool>,
     queued_history: i8,
@@ -285,6 +287,8 @@ impl CanvasStudioApp {
             recovery_dir_override,
             last_save_error: None,
             last_viewport_size: Vec2::new(1100.0, 720.0),
+            pending_canvas_fit: true,
+            auto_fit_canvas: true,
             frame_snapshot_cache: Default::default(),
             queued_save: None,
             queued_history: 0,
@@ -532,6 +536,8 @@ impl CanvasStudioApp {
             pending.project.pages.push(CanvasPage::new(1, "Page 1"));
         }
         self.master_edit_session = None;
+        self.pending_canvas_fit = true;
+        self.auto_fit_canvas = true;
         self.history.clear();
         self.canvas_state.reset_for_document();
         self.selected_id = None;
@@ -770,7 +776,7 @@ impl CanvasStudioApp {
         }
     }
 
-    fn fit_canvas_to_viewport(&mut self) {
+    fn fitted_canvas_zoom(&self) -> f32 {
         let ruler_pad = if self.canvas_state.show_rulers {
             24.0
         } else {
@@ -780,7 +786,13 @@ impl CanvasStudioApp {
         let avail_h = (self.last_viewport_size.y - ruler_pad - 64.0).max(160.0);
         let zx = avail_w / self.project.width.max(1.0);
         let zy = avail_h / self.project.height.max(1.0);
-        self.canvas_state.zoom = zx.min(zy).clamp(0.15, 2.5);
+        zx.min(zy).clamp(0.15, 2.5)
+    }
+
+    fn fit_canvas_to_viewport(&mut self) {
+        self.pending_canvas_fit = false;
+        self.auto_fit_canvas = true;
+        self.canvas_state.zoom = self.fitted_canvas_zoom();
         self.canvas_state.pan = Vec2::ZERO;
     }
 
@@ -886,16 +898,25 @@ impl CanvasStudioApp {
     fn handle_keyboard_shortcuts(&mut self, ctx: &Context) {
         if !self.presentation_mode {
             let action = ctx.input_mut(|i| {
-                let m = i.modifiers;
-                if !(m.ctrl || m.command) {
-                    return None;
-                }
-                if i.consume_key(m, Key::S) {
+                let pressed = |i: &mut egui::InputState, key, shift| {
+                    let ctrl = egui::Modifiers {
+                        ctrl: true,
+                        shift,
+                        ..Default::default()
+                    };
+                    let command = egui::Modifiers {
+                        command: true,
+                        shift,
+                        ..Default::default()
+                    };
+                    i.consume_key(ctrl, key) || i.consume_key(command, key)
+                };
+                if pressed(i, Key::S, false) {
                     Some(0)
-                } else if i.consume_key(m, Key::Z) {
-                    Some(if m.shift { 2 } else { 1 })
-                } else if i.consume_key(m, Key::Y) {
+                } else if pressed(i, Key::Z, true) || pressed(i, Key::Y, false) {
                     Some(2)
+                } else if pressed(i, Key::Z, false) {
+                    Some(1)
                 } else {
                     None
                 }
@@ -1390,7 +1411,15 @@ impl CanvasStudioApp {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none().fill(Color32::from_rgb(24, 25, 28)))
                     .show(ctx, |ui| {
-                        self.last_viewport_size = ui.available_size();
+                        let available = ui.available_size();
+                        if available != self.last_viewport_size && self.auto_fit_canvas {
+                            self.pending_canvas_fit = true;
+                        }
+                        self.last_viewport_size = available;
+                        if self.pending_canvas_fit {
+                            self.fit_canvas_to_viewport();
+                        }
+                        let zoom_before = self.canvas_state.zoom;
                         let action = render_interactive_canvas(
                             ctx,
                             ui,
@@ -1401,6 +1430,9 @@ impl CanvasStudioApp {
                             &mut self.history,
                             false,
                         );
+                        if self.canvas_state.zoom != zoom_before {
+                            self.auto_fit_canvas = false;
+                        }
                         match action {
                             CanvasAction::DuplicateSelected => self.duplicate_selected(),
                             CanvasAction::DeleteSelected => self.delete_selected(),
@@ -1481,7 +1513,7 @@ impl CanvasStudioApp {
 impl CanvasStudioApp {
     fn render_top_navigation_bar(&mut self, ctx: &Context) {
         TopBottomPanel::top("canvas_top_header")
-            .exact_height(52.0)
+            .exact_height(78.0)
             .frame(
                 egui::Frame::none()
                     .fill(Color32::from_rgb(15, 17, 23))
@@ -1489,7 +1521,7 @@ impl CanvasStudioApp {
                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 41, 52))),
             )
             .show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
+                ui.horizontal(|ui| {
                     let home_btn = egui::Button::new(
                         RichText::new("✦ Canvas Studio")
                             .strong()
@@ -1545,16 +1577,13 @@ impl CanvasStudioApp {
 
                     ui.separator();
 
+                });
+                ui.add_space(5.0);
+                ui.horizontal(|ui| {
                     // Magic Switch / Resize Dropdown
                     egui::ComboBox::from_id_salt("magic_switch_top")
-                        .selected_text(format!(
-                            "✨ Resize: {} ({:.0}×{:.0} / {:.1}×{:.1}mm)",
-                            self.project.format.label(),
-                            self.project.width,
-                            self.project.height,
-                            self.project.effective_width_mm(),
-                            self.project.effective_height_mm()
-                        ))
+                        .width(170.0)
+                        .selected_text(self.project.format.label())
                         .show_ui(ui, |ui| {
                             ui.label(
                                 RichText::new("Print & Digital Format Presets")
@@ -1594,7 +1623,7 @@ impl CanvasStudioApp {
 
                     ui.add(
                         egui::TextEdit::singleline(&mut self.project.title)
-                            .desired_width(190.0)
+                            .desired_width(120.0)
                             .hint_text("Project Title"),
                     );
                     if self.dirty {
@@ -2514,42 +2543,49 @@ impl CanvasStudioApp {
                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 41, 52))),
             )
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    for tab in DockTab::all() {
-                        let (icon, label) = tab.icon_and_label();
-                        let active = self.dock_open && self.active_dock == *tab;
-                        let bg = if active {
-                            Color32::from_rgb(45, 52, 78)
-                        } else {
-                            Color32::TRANSPARENT
-                        };
-                        let fg = if active {
-                            Color32::from_rgb(0, 245, 212)
-                        } else {
-                            Color32::from_rgb(175, 184, 201)
-                        };
+                ScrollArea::vertical()
+                    .id_salt("tool-rail-scroll")
+                    .show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            for tab in DockTab::all() {
+                                let (icon, label) = tab.icon_and_label();
+                                let active = self.dock_open && self.active_dock == *tab;
+                                let bg = if active {
+                                    Color32::from_rgb(45, 52, 78)
+                                } else {
+                                    Color32::TRANSPARENT
+                                };
+                                let fg = if active {
+                                    Color32::from_rgb(0, 245, 212)
+                                } else {
+                                    Color32::from_rgb(175, 184, 201)
+                                };
 
-                        let btn = egui::Button::new(
-                            RichText::new(format!("{icon}\n{label}"))
-                                .size(11.5)
-                                .color(fg),
-                        )
-                        .fill(bg)
-                        .rounding(8.0)
-                        .min_size(Vec2::new(56.0, 48.0));
+                                let btn = egui::Button::new(
+                                    RichText::new(format!(
+                                        "{icon}\n{}",
+                                        if label == "Elements" { "Shapes" } else { label }
+                                    ))
+                                    .size(11.5)
+                                    .color(fg),
+                                )
+                                .fill(bg)
+                                .rounding(8.0)
+                                .min_size(Vec2::new(56.0, 48.0));
 
-                        if ui.add(btn).clicked() {
-                            if self.active_dock == *tab && self.dock_open {
-                                self.dock_open = false;
-                            } else {
-                                self.active_dock = *tab;
-                                self.dock_open = true;
-                                self.canvas_state.drawing_mode = *tab == DockTab::Draw;
+                                if ui.add(btn).clicked() {
+                                    if self.active_dock == *tab && self.dock_open {
+                                        self.dock_open = false;
+                                    } else {
+                                        self.active_dock = *tab;
+                                        self.dock_open = true;
+                                        self.canvas_state.drawing_mode = *tab == DockTab::Draw;
+                                    }
+                                }
+                                ui.add_space(4.0);
                             }
-                        }
-                        ui.add_space(4.0);
-                    }
-                });
+                        });
+                    });
             });
 
         if !self.dock_open {
@@ -3992,106 +4028,110 @@ impl CanvasStudioApp {
 
     fn render_bottom_pages_bar(&mut self, ctx: &Context) {
         TopBottomPanel::bottom("canvas_bottom_bar")
-            .exact_height(64.0)
+            .exact_height(78.0)
             .frame(
                 egui::Frame::none()
                     .fill(Color32::from_rgb(18, 20, 27))
-                    .inner_margin(Margin::symmetric(14.0, 8.0))
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 41, 52))),
+                    .inner_margin(Margin::symmetric(12.0, 6.0)),
             )
             .show(ctx, |ui| {
-                ScrollArea::horizontal().show(ui, |ui| {
-                    ui.horizontal_centered(|ui| {
-                        let pages_len = self.project.pages.len();
-                        for idx in 0..pages_len {
-                            let is_cur = idx == self.current_page_idx;
-                            let title = self.project.pages[idx].title.clone();
-                            let count = self.project.pages[idx].elements.len();
-                            let btn = egui::Button::new(
-                                RichText::new(format!(
-                                    "Page {}: {}\n({} items)",
-                                    idx + 1,
-                                    title,
-                                    count
-                                ))
-                                .size(11.0)
-                                .color(if is_cur {
-                                    Color32::from_rgb(15, 23, 42)
-                                } else {
-                                    Color32::WHITE
-                                }),
-                            )
-                            .fill(if is_cur {
-                                Color32::from_rgb(0, 245, 212)
-                            } else {
-                                Color32::from_rgb(36, 40, 54)
-                            })
-                            .rounding(8.0)
-                            .min_size(Vec2::new(110.0, 42.0));
-
-                            if ui.add(btn).clicked() {
-                                self.current_page_idx = idx;
-                                self.selected_id = None;
-                                self.canvas_state.selected_ids.clear();
-                                self.canvas_state.inline_edit_id = None;
-                            }
-                        }
-
-                        if ui.button("➕ Add Page").clicked() {
-                            self.record_mutation();
-                            let new_id = self.project.alloc_id();
-                            let num = self.project.pages.len() + 1;
-                            self.project
-                                .pages
-                                .push(CanvasPage::new(new_id, format!("Page {num}")));
-                            self.current_page_idx = self.project.pages.len() - 1;
-                            self.selected_id = None;
-                            self.canvas_state.selected_ids.clear();
-                        }
-
-                        if ui.button("📋 Duplicate Page").clicked() {
-                            self.record_mutation();
-                            if let Some(mut cur_clone) =
-                                self.project.pages.get(self.current_page_idx).cloned()
-                            {
-                                cur_clone.id = self.project.alloc_id();
-                                cur_clone.title = format!("{} Copy", cur_clone.title);
-                                for el in &mut cur_clone.elements {
-                                    el.id = self.project.alloc_id();
+                ui.horizontal(|ui| {
+                    let count = self.project.pages.len();
+                    if ui
+                        .add_enabled(self.current_page_idx > 0, egui::Button::new("Previous"))
+                        .clicked()
+                    {
+                        self.current_page_idx -= 1;
+                        self.selected_id = None;
+                        self.canvas_state.reset_for_document();
+                    }
+                    egui::ComboBox::from_id_salt("current-book-page")
+                        .width(220.0)
+                        .selected_text(format!(
+                            "{} / {} · {}",
+                            self.current_page_idx + 1,
+                            count,
+                            self.project.pages[self.current_page_idx].title
+                        ))
+                        .show_ui(ui, |ui| {
+                            for index in 0..count {
+                                if ui
+                                    .selectable_value(
+                                        &mut self.current_page_idx,
+                                        index,
+                                        format!(
+                                            "{} · {}",
+                                            index + 1,
+                                            self.project.pages[index].title
+                                        ),
+                                    )
+                                    .changed()
+                                {
+                                    self.selected_id = None;
+                                    self.canvas_state.reset_for_document();
                                 }
-                                self.project.pages.push(cur_clone);
-                                self.current_page_idx = self.project.pages.len() - 1;
                             }
+                        });
+                    if ui
+                        .add_enabled(self.current_page_idx + 1 < count, egui::Button::new("Next"))
+                        .clicked()
+                    {
+                        self.current_page_idx += 1;
+                        self.selected_id = None;
+                        self.canvas_state.reset_for_document();
+                    }
+                    ui.add_enabled_ui(self.master_edit_session.is_none(), |ui| {
+                        if ui.button("Add Page").clicked() {
+                            self.record_mutation();
+                            let page = CanvasPage::new(
+                                self.project.alloc_id(),
+                                format!("Page {}", count + 1),
+                            );
+                            self.project.pages.push(page);
+                            self.current_page_idx = count;
+                            self.selected_id = None;
+                            self.canvas_state.reset_for_document();
                         }
-
-                        if self.project.pages.len() > 1 && ui.button("🗑 Delete Page").clicked() {
+                        if ui.button("Duplicate Page").clicked() {
+                            self.duplicate_book_page(self.current_page_idx);
+                        }
+                        if ui
+                            .add_enabled(count > 1, egui::Button::new("Delete Page"))
+                            .clicked()
+                        {
                             self.record_mutation();
                             self.project.pages.remove(self.current_page_idx);
                             self.reconcile_selection_and_page();
                         }
-
-                        ui.toggle_value(&mut self.show_notes_drawer, "📝 Notes");
-
-                        ui.separator();
-                        ui.label(
+                    });
+                    ui.toggle_value(&mut self.show_notes_drawer, "Notes");
+                });
+                ui.horizontal(|ui| {
+                    let status_width = (ui.available_width() - 510.).max(80.);
+                    ui.add_sized(
+                        [status_width, 20.],
+                        egui::Label::new(
                             RichText::new(&self.status_banner)
                                 .size(11.5)
                                 .color(Color32::from_rgb(148, 163, 184)),
+                        )
+                        .truncate(),
+                    );
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Fit").clicked() {
+                            self.fit_canvas_to_viewport();
+                        }
+                        let response = ui.add(
+                            egui::Slider::new(&mut self.canvas_state.zoom, 0.15..=2.5)
+                                .text("Zoom")
+                                .fixed_decimals(2),
                         );
-
-                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("Fit").clicked() {
-                                self.fit_canvas_to_viewport();
-                            }
-                            ui.add(
-                                egui::Slider::new(&mut self.canvas_state.zoom, 0.15..=2.5)
-                                    .text("Zoom")
-                                    .fixed_decimals(2),
-                            );
-                            ui.checkbox(&mut self.canvas_state.snap_enabled, "Snap");
-                            ui.checkbox(&mut self.canvas_state.show_grid, "Grid");
-                            ui.checkbox(&mut self.canvas_state.show_rulers, "Rulers");
-                        });
+                        if response.changed() && (response.dragged() || response.has_focus()) {
+                            self.auto_fit_canvas = false;
+                        }
+                        ui.checkbox(&mut self.canvas_state.snap_enabled, "Snap");
+                        ui.checkbox(&mut self.canvas_state.show_grid, "Grid");
+                        ui.checkbox(&mut self.canvas_state.show_rulers, "Rulers");
                     });
                 });
             });
@@ -4609,7 +4649,21 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Canvas Studio",
         native_options,
-        Box::new(|cc| Ok(Box::new(CanvasStudioApp::new(cc)))),
+        Box::new(move |cc| {
+            let mut app = CanvasStudioApp::new(cc);
+            if let Some(index) = args.iter().position(|a| a == "--open") {
+                if let Some(path) = args.get(index + 1) {
+                    match load_project_json(Path::new(path)) {
+                        Ok(project) => {
+                            app.replace_document(project, Some(PathBuf::from(path)));
+                            app.screen = WorkspaceScreen::StudioEditor;
+                        }
+                        Err(error) => app.status_banner = format!("Open failed: {error}"),
+                    }
+                }
+            }
+            Ok(Box::new(app))
+        }),
     )
 }
 

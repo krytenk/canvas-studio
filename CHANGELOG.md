@@ -1,5 +1,14 @@
 # Changes
 
+## 1.8.1 — native desktop usability fixes
+
+- Scroll the tool rail so Book/Puzzles remain reachable at 680 px window height. Split the header into two rows so Save/Export stay accessible at 1024 px width.
+- Keep page navigation, status and zoom controls bounded for long books; page duplication now uses the shared fresh-group identity path.
+- Fit new/opened pages and retain Fit mode across resizing, while preserving deliberate manual zoom.
+- Fix fast save/undo/redo shortcuts when modifier release arrives in the same frame. Add `--open PATH` for ordinary desktop launches.
+- Keep generated headers/folios inside the configured trim safety margin.
+- 66 automated checks and native X11 window interactions cover minimum size, resizing, title editing/save/reopen, undo/redo, tool scrolling, book navigation and export/preflight display.
+
 ## 1.8.0 — reproducible word-search products
 
 - Added a Puzzles panel with vocabulary, 8–24 grids, three direction rules, seeds, print typography/colours and batches of up to 50 puzzles. Optional answer pages follow the puzzles.

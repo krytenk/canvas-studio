@@ -190,20 +190,23 @@ pub fn compose_page(project: &Project, index: usize) -> Result<CanvasPage, Strin
     page.elements = master;
     let size = book.type_size_pt * project.effective_units_per_inch() / 72.;
     let h = size * 1.5;
+    let safe_y = project.print_settings.safe_margin_mm.max(0.) * project.height
+        / project.effective_height_mm();
     if !book.header.is_empty() {
         page.elements.push(text(
             next(),
             "Master header",
             book.header.clone(),
             rect.min.x,
-            (rect.min.y - h) / 2.,
+            ((rect.min.y - h) / 2.).max(safe_y),
             rect.width(),
             h,
             size,
             TextAlign::Left,
         ));
     }
-    let footer_y = rect.max.y + (project.height - rect.max.y - h) / 2.;
+    let footer_y =
+        (rect.max.y + (project.height - rect.max.y - h) / 2.).min(project.height - safe_y - h);
     if !book.footer.is_empty() {
         page.elements.push(text(
             next(),
