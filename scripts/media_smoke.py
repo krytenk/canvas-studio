@@ -81,11 +81,11 @@ def run(binary,chrome=None):
         # Save and reopen on a genuinely cold media cache: no original/proxy sidecars.
         before=c.call('studio_document')['timeline'];c.call('studio_export',{**c.guard(),'path':'portable.canvas','format':'canvas','overwrite':True})
         c.close();c=None;server.terminate();server.wait(timeout=10);log.close()
-        server,log,connection,url=launch(binary,qa,'cold-data',work/'portable.canvas');c=Client(work,connection);assert c.call('studio_document')['timeline']==before
-        assert list((qa/'cold-data/canvas-studio/media/originals').glob('*.mp4'))
+        cold_folder='cold-data-'+str(time.time_ns());server,log,connection,url=launch(binary,qa,cold_folder,work/'portable.canvas');c=Client(work,connection);assert c.call('studio_document')['timeline']==before
+        assert list((qa/cold_folder/'canvas-studio/media/originals').glob('*.mp4'))
         cold=c.call('studio_media_render',{**c.guard(),'mode':'export'});wait(c,cold)
         # Deliberate corruption is detected before decoding; recovery still opens metadata.
-        original=next((qa/'cold-data/canvas-studio/media/originals').glob('*.mp4'));original.write_bytes(b'broken')
+        original=qa/cold_folder/'canvas-studio/media/originals'/f"{a['id']}.mp4";original.write_bytes(b'broken')
         bad=c.call('studio_media_render',{**c.guard(),'mode':'export'});failure=wait(c,bad,('failed',));assert 'damaged' in failure['error']
         c.call('studio_open',{**c.guard(),'path':'portable.canvas'});assert original.stat().st_size==movie.stat().st_size
         c.call('studio_media_job',{**c.guard(),'id':cold['id'],'operation':'save','path':'../escape.mp4'},error=True)
