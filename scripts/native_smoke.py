@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def run(binary,xvfb):
     qa=ROOT/'qa/native-smoke';qa.mkdir(parents=True,exist_ok=True)
     working=qa/'working.canvas';shutil.copy2(ROOT/'qa/collection-proof/collection.canvas',working)
-    display=':94';env=os.environ.copy();env['DISPLAY']=display;env.pop('WAYLAND_DISPLAY',None);env['LIBGL_ALWAYS_SOFTWARE']='1';env['XDG_DATA_HOME']=str(qa/'app-data')
+    display=':94';env=os.environ.copy();env['DISPLAY']=display;env.pop('WAYLAND_DISPLAY',None);env['LIBGL_ALWAYS_SOFTWARE']='1';env['XDG_SESSION_TYPE']='x11';env['WINIT_X11_SCALE_FACTOR']='1';env['XDG_DATA_HOME']=str(qa/'app-data')
     log=(qa/'native.log').open('wb');server=subprocess.Popen([xvfb,display,'-screen','0','1440x900x24','-nolisten','tcp'],stdout=log,stderr=subprocess.STDOUT)
     app=None
     try:
@@ -18,7 +18,9 @@ def run(binary,xvfb):
         for _ in range(100):
             tree=subprocess.run(['xwininfo','-root','-tree'],env=env,capture_output=True,text=True).stdout
             if 'Canvas Studio' in tree:break
+            if app.poll() is not None:raise RuntimeError('Native application failed to start:\n'+(qa/'native.log').read_text())
             time.sleep(.1)
+        else:raise RuntimeError('Native window did not appear:\n'+(qa/'native.log').read_text())
         driver=qa/'driver.py';driver.write_text('''import sys,time,importlib
 sys.path.insert(0,sys.argv[1])
 import native_ui as ui
