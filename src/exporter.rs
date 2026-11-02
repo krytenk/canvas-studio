@@ -224,7 +224,9 @@ fn render_page_svg(page: &CanvasPage, width: f32, height: f32, transparent_bg: b
                 opacity,
             } => {
                 let tf_attr = transform.svg_transform_attr();
-                svg.push_str(&format!(r#"<g opacity="{opacity:.2}"{tf_attr}>"#));
+                svg.push_str(&format!(
+                    r#"<g opacity="{opacity:.2}" data-canvas-id="{element_id}"{tf_attr}>"#
+                ));
                 svg.push('\n');
 
                 let fill_attr = match fill {
@@ -294,7 +296,9 @@ fn render_page_svg(page: &CanvasPage, width: f32, height: f32, transparent_bg: b
                 ..
             } => {
                 let tf_attr = transform.svg_transform_attr();
-                svg.push_str(&format!(r#"<g opacity="{opacity:.2}"{tf_attr}>"#));
+                svg.push_str(&format!(
+                    r#"<g opacity="{opacity:.2}" data-canvas-id="{element_id}"{tf_attr}>"#
+                ));
                 svg.push('\n');
 
                 if let Some(el) = page.elements.iter().find(|e| e.id == *element_id) {
@@ -346,6 +350,7 @@ fn render_page_svg(page: &CanvasPage, width: f32, height: f32, transparent_bg: b
                 svg.push_str("</g>\n");
             }
             SceneItem::Image {
+                element_id,
                 transform,
                 width_px,
                 height_px,
@@ -359,7 +364,9 @@ fn render_page_svg(page: &CanvasPage, width: f32, height: f32, transparent_bg: b
                 ..
             } => {
                 let tf_attr = transform.svg_transform_attr();
-                svg.push_str(&format!(r#"<g opacity="{opacity:.2}"{tf_attr}>"#));
+                svg.push_str(&format!(
+                    r#"<g opacity="{opacity:.2}" data-canvas-id="{element_id}"{tf_attr}>"#
+                ));
                 svg.push('\n');
 
                 if let Some(cropped_img) = render_local_image_frame(
@@ -451,7 +458,10 @@ fn emit_fallback_svg_element(svg: &mut String, el: &CanvasElement) {
     let tf = LocalToPageTransform::from_element(el);
     let tf_attr = tf.svg_transform_attr();
     let opacity = el.opacity.clamp(0.0, 1.0);
-    svg.push_str(&format!(r#"<g opacity="{opacity:.2}"{tf_attr}>"#));
+    let element_id = el.id;
+    svg.push_str(&format!(
+        r#"<g opacity="{opacity:.2}" data-canvas-id="{element_id}"{tf_attr}>"#
+    ));
     svg.push('\n');
 
     match &el.kind {
@@ -1486,6 +1496,7 @@ fn validate_and_stage_project_assets(project: &Project, parent_dir: &Path) -> Re
             "Book master",
             project.production.book.master_elements.as_slice(),
         )))
+        .chain(crate::campaign::asset_sets(&project.production.studio))
         .enumerate()
     {
         for el in elements {
@@ -1550,6 +1561,7 @@ fn validate_loaded_project_assets(project: &Project, source_path: &Path) -> Resu
             "Book master",
             project.production.book.master_elements.as_slice(),
         )))
+        .chain(crate::campaign::asset_sets(&project.production.studio))
         .enumerate()
     {
         for el in elements {
@@ -1599,6 +1611,12 @@ fn validate_loaded_project_assets(project: &Project, source_path: &Path) -> Resu
 /// Saves a `Project` atomically via a temporary sibling file, deduplicating and verifying all raster
 /// image assets in `<project_dir>/assets/<asset_id>.<ext>` BEFORE committing the `.canvas.json` manifest.
 pub fn save_project_json(project: &Project, path: &Path) -> Result<(), String> {
+    if project.production.studio.active() {
+        return crate::project_package::save(project, path);
+    }
+    save_project_manifest(project, path)
+}
+pub(crate) fn save_project_manifest(project: &Project, path: &Path) -> Result<(), String> {
     if path
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("canvas"))
@@ -1618,6 +1636,7 @@ pub fn save_project_json(project: &Project, path: &Path) -> Result<(), String> {
         )
     })?;
 
+    crate::campaign::validate(project)?;
     crate::imported_fonts::register_project(project)?;
     // 1. Validate and persist all required image assets on disk before touching the manifest.
     validate_and_stage_project_assets(project, &parent_dir)?;
@@ -1687,6 +1706,10 @@ pub fn load_project_json(path: &Path) -> Result<Project, String> {
         .map_err(|e| format!("Failed reading project file '{}': {e}", path.display()))?;
     let mut project: Project = serde_json::from_str(&data)
         .map_err(|e| format!("Failed parsing project JSON '{}': {e}", path.display()))?;
+    crate::campaign::validate(&project)?;
+    if project.schema_version > 2 {
+        return Err("This project requires a newer Canvas Studio document schema".into());
+    }
     crate::imported_fonts::register_project(&project)?;
     hydrate_project_assets(&mut project);
     validate_loaded_project_assets(&project, path)?;

@@ -8,6 +8,8 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
+import zipfile
 import http.client
 import json
 import os
@@ -17,7 +19,7 @@ import sys
 import tempfile
 from urllib.parse import urlencode
 
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 PROTOCOL = "2026-07-28"
 LEGACY = "2025-11-25"
 PREFIX = "io.modelcontextprotocol/"
@@ -53,7 +55,9 @@ PAGE = {"type": "integer", "minimum": 0, "maximum": 999}
 GUARD = {"document_id": STRING, "expected_revision": {"type": "integer", "minimum": 0}}
 SHAPES = ("Rectangle", "RoundedRect", "Circle", "Triangle", "RightTriangle", "Diamond", "Pentagon", "Hexagon", "Octagon", "Star5", "Star8", "Burst12", "Heart", "ArrowRight", "ArrowLeft", "SpeechBubble", "BadgeShield", "Cross", "Pill", "LineHorizontal", "Parallelogram", "Trapezoid", "BannerRibbon")
 ACTION = {
-    "action": enum("title", "field", "text", "emphasis", "geometry", "visible", "lock", "delete", "duplicate", "page_title", "add_page", "delete_page", "move_page", "add_text", "add_shape", "shape", "background", "layer", "reorder_layer"),
+    "action": enum("title", "field", "text", "emphasis", "geometry", "visible", "lock", "delete", "duplicate", "page_title", "add_page", "delete_page", "move_page", "add_text", "add_shape", "shape", "background", "layer", "reorder_layer", "selection_move", "selection_transform", "selection_align", "selection_distribute", "selection_group", "selection_ungroup", "selection_duplicate", "selection_delete", "brand_token", "brand_bind", "brand_background", "component_save", "component_insert", "variant_save", "variant_activate", "field_define", "campaign_create"),
+    "ids": {"type":"array","minItems":1,"maxItems":500,"items":{"type":"string"}},
+    "token": {"type":["string","null"]}, "target":enum("primary","fill","text","stroke"), "direction":enum("left","center","right","top","middle","bottom","horizontal","vertical"), "required":BOOL,
     "id": {"type": "string", "description": "Existing layer/page id, or $alias from an earlier add_text/add_shape ref in this batch."},
     "ref": {"type": "string", "description": "Unique alias on add_text/add_shape only."},
     "page": PAGE, "to": PAGE, "shape": enum(*SHAPES),
@@ -62,7 +66,7 @@ ACTION = {
     "align": enum("Left", "Center", "Right"), "property": enum("bold", "italic", "underline"),
     "start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 0},
 }
-for key in ("x", "y", "width", "height", "rotation", "size", "leading", "tracking", "space_before", "space_after", "first_line_indent", "inset_left", "inset_right", "inset_top", "inset_bottom", "opacity", "stroke_width", "corner_radius"):
+for key in ("x", "y", "dx", "dy", "width", "height", "rotation", "size", "leading", "tracking", "space_before", "space_after", "first_line_indent", "inset_left", "inset_right", "inset_top", "inset_bottom", "opacity", "stroke_width", "corner_radius"):
     ACTION[key] = NUMBER
 for key in ("color", "gradient_end", "stroke_color"):
     ACTION[key] = {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}
@@ -80,10 +84,10 @@ TOOLS = [
     tool("studio_templates", "Browse editable templates", "Lists the native editable catalog, sizes and page counts.", obj(), True),
     tool("studio_use_template", "Use an editable template", "Create a template document or fit/insert its pages into the current document. Undo available. Pass current document_id/revision.", obj({**GUARD, "template": STRING, "mode": enum("replace", "insert")}, (*GUARD, "template", "mode")), destructive=True),
     tool("studio_create", "Create a blank design", "Replace active document with a blank design, with dimensions in layout pixels at 96 units/inch. Undo available.", obj({**GUARD, "width": {"type": "number", "minimum": 64, "maximum": 16000}, "height": {"type": "number", "minimum": 64, "maximum": 16000}}, (*GUARD, "width", "height")), destructive=True),
-    tool("studio_edit", "Apply an atomic design batch", "One undo step; every command succeeds or none commit. dry_run validates/preflights without committing. add_text/add_shape require page; optional x,y,width,height must be supplied together; ref:'hero' then id:'$hero' addresses a new layer. text uses content, size(pt), family, color, align, bold/italic/underline, leading, tracking and paragraph insets/spacing. geometry requires id,x,y,width,height. background uses page,color. shape uses id,color,gradient_end,vertical,stroke_color,stroke_width,corner_radius. layer uses id,name,opacity. Page/layer positions are zero-based, bottom layer first. Linked styles must be edited on desktop; typography overrides on them are rejected.", obj({**GUARD, "commands": {"type": "array", "minItems": 1, "maxItems": 500, "items": obj(ACTION, ("action",))}, "dry_run": BOOL}, (*GUARD, "commands")), destructive=True),
-    tool("studio_preview", "See the design", "Returns a native-rendered PNG image (bounded size). Review this visual, then preflight before delivery. A preview can show incomplete fields.", obj({"document_id": STRING, "page": PAGE, "edge": {"type": "integer", "minimum": 64, "maximum": 1600}}, ("document_id",)), True),
+    tool("studio_edit", "Apply an atomic design batch", "Campaign/layout commands: campaign_create; variant_save/variant_activate(name); brand_token(key,color); brand_bind(page,ids,token,target) with null to unlink; brand_background(page,token); field_define(key,value,required); component_save(page,ids,key,name); component_insert(page,key,x,y,width); selection_move(page,ids,dx,dy), selection_transform(page,ids,x,y,width,height) proportional; selection_align/distribute(page,ids,direction); selection_group/ungroup/duplicate/delete(page,ids). Selection commands expand groups and reject locked members. One undo step; every command succeeds or none commit. dry_run validates/preflights without committing. add_text/add_shape require page; optional x,y,width,height must be supplied together; ref:'hero' then id:'$hero' addresses a new layer. text uses content, size(pt), family, color, align, bold/italic/underline, leading, tracking and paragraph insets/spacing. geometry requires id,x,y,width,height. background uses page,color. shape uses id,color,gradient_end,vertical,stroke_color,stroke_width,corner_radius. layer uses id,name,opacity. Page/layer positions are zero-based, bottom layer first. Linked styles must be edited on desktop; typography overrides on them are rejected.", obj({**GUARD, "commands": {"type": "array", "minItems": 1, "maxItems": 500, "items": obj(ACTION, ("action",))}, "dry_run": BOOL}, (*GUARD, "commands")), destructive=True),
+    tool("studio_preview", "See the design", "Returns a native-rendered PNG image (bounded size). Review this visual, then preflight before delivery. A preview can show incomplete fields.", obj({"document_id": STRING, "page": PAGE, "layout":STRING, "edge": {"type": "integer", "minimum": 64, "maximum": 1600}}, ("document_id",)), True),
     tool("studio_preflight", "Check production readiness", "Returns structured text overflow, font, required-field and export issues for the explicit active document.", obj({"document_id": STRING}, ("document_id",)), True),
-    tool("studio_export", "Export into the workspace", "Write portable .canvas, checked PDF or checked PNG inside the workspace. PNG 96 DPI matches social layout dimensions; 150/300 DPI available. No overwrite unless explicitly true. Refuses stale documents/revisions.", obj({**GUARD, "path": STRING, "format": enum("canvas", "pdf", "png"), "page": PAGE, "dpi": {"type": "integer", "enum": [96, 150, 300]}, "overwrite": BOOL}, (*GUARD, "path", "format"))),
+    tool("studio_export", "Export into the workspace", "Write portable .canvas, checked PDF/PNG, or a whole campaign ZIP (project, PDFs, PNGs, manifest) inside the workspace. layout optionally selects a named composition without switching the live document. PNG 96 DPI matches social layout dimensions; 150/300 DPI available. No overwrite unless explicitly true. Refuses stale documents/revisions.", obj({**GUARD, "path": STRING, "format": enum("canvas", "pdf", "png", "zip"), "layout":STRING, "page": PAGE, "dpi": {"type": "integer", "enum": [96, 150, 300]}, "overwrite": BOOL}, (*GUARD, "path", "format"))),
     tool("studio_open", "Open a workspace project", "Open a portable .canvas project in the live studio. Replaces current document with undo available. File must be inside workspace.", obj({**GUARD, "path": STRING}, (*GUARD, "path")), destructive=True),
     tool("studio_import", "Import a local asset", "Import a static TrueType font or add a photo layer on a page. Files restricted to workspace; imported assets embed in portable project.", obj({**GUARD, "path": STRING, "kind": enum("font", "photo"), "page": PAGE}, (*GUARD, "path", "kind"))),
     tool("studio_history", "Undo or redo", "Undo or redo one studio step in the live document. Returns updated handle/revision.", obj({**GUARD, "direction": enum("undo", "redo")}, (*GUARD, "direction")), destructive=True),
@@ -95,7 +99,7 @@ def validate(value, schema, path="arguments"):
     types = schema.get("type")
     if types:
         types = [types] if isinstance(types, str) else types
-        matches = {"object": isinstance(value, dict), "array": isinstance(value, list), "string": isinstance(value, str), "boolean": isinstance(value, bool), "integer": isinstance(value, int) and not isinstance(value, bool), "number": isinstance(value, (int, float)) and not isinstance(value, bool)}
+        matches = {"object": isinstance(value, dict), "array": isinstance(value, list), "string": isinstance(value, str), "null": value is None, "boolean": isinstance(value, bool), "integer": isinstance(value, int) and not isinstance(value, bool), "number": isinstance(value, (int, float)) and not isinstance(value, bool)}
         if not any(matches.get(t, False) for t in types):
             raise ValueError(f"{path}: expected {' or '.join(types)}")
     if "enum" in schema and value not in schema["enum"]:
@@ -171,6 +175,32 @@ class Studio:
         if reading and (not path.is_file() or path.stat().st_size > MAX_FILE): raise ValueError("Use a regular workspace file up to 128 MiB")
         return path
 
+    def bundle(self,a):
+        state=self.http("/api/state",guard=a)
+        variants=state["studio"]["variants"]
+        if not variants or sum(v["pages"] for v in variants)>100: raise ValueError("Use a campaign with 1–100 total pages for bundle export")
+        files=[];total=0
+        def read(path):
+            nonlocal total
+            data,revision=self.http(path,guard=a,raw=True)
+            if revision!=a["expected_revision"]:raise ValueError("Campaign changed during export")
+            total+=len(data)
+            if total>MAX_FILE:raise ValueError("Campaign bundle exceeds 128 MiB; export layouts individually")
+            return data
+        files.append(("campaign.canvas",read("/api/download.canvas")))
+        manifest={"version":1,"studio_version":state["version"],"title":state["title"],"revision":a["expected_revision"],"layouts":[]}
+        for i,v in enumerate(variants):
+            slug=f"{i+1:02d}-"+re.sub(r"[^a-z0-9]+","-",v["name"].lower()).strip("-")
+            query=urlencode({"variant":v["name"]})
+            files.append((f"{slug}/{slug}.pdf",read("/api/download.pdf?"+query)))
+            for n in range(v["pages"]):files.append((f"{slug}/page-{n+1:03d}.png",read(f"/api/download.png?{query}&page={n}&dpi=96")))
+            manifest["layouts"].append({"name":v["name"],"width":v["width"],"height":v["height"],"pages":v["pages"],"png_dpi":96,"folder":slug})
+        files.append(("manifest.json",json.dumps(manifest,indent=2).encode()))
+        output=io.BytesIO()
+        with zipfile.ZipFile(output,"w",compression=zipfile.ZIP_STORED) as archive:
+            for name,data in files:archive.writestr(name,data)
+        return output.getvalue(),a["expected_revision"]
+
     def call(self, name, a):
         definition = next((t for t in TOOLS if t["name"] == name), None)
         if not definition: raise ValueError("Unknown studio tool")
@@ -180,7 +210,7 @@ class Studio:
         current=self.guard(a)
         read_guard={"document_id":a["document_id"],"expected_revision":current["revision"]}
         if name == "studio_preview":
-            data, revision = self.http("/api/agent-preview?" + urlencode({"page": a.get("page", 0), "edge": a.get("edge", 960)}), guard=read_guard, raw=True)
+            data, revision = self.http("/api/agent-preview?" + urlencode({"page": a.get("page", 0), "edge": a.get("edge", 960), **({"variant":a["layout"]} if "layout" in a else {})}), guard=read_guard, raw=True)
             # Ensure the read did not race an edit after the guard.
             after = self.guard(a)
             if revision != after["revision"]: raise ValueError("Design changed during preview; try again")
@@ -189,7 +219,12 @@ class Studio:
         if name == "studio_export":
             path = self.scoped(a["path"])
             if path.suffix.lower() != "." + a["format"]: raise ValueError("Output extension must match format")
-            data, revision = self.http(f'/api/download.{a["format"]}?' + urlencode({"page": a.get("page", 0), "dpi": a.get("dpi", 96)}), guard=a, raw=True)
+            if a["format"]=="zip":
+                data,revision=self.bundle(a)
+            else:
+                query={"page":a.get("page",0),"dpi":a.get("dpi",96)}
+                if "layout" in a:query["variant"]=a["layout"]
+                data, revision = self.http(f'/api/download.{a["format"]}?' + urlencode(query), guard=a, raw=True)
             self.guard(a)
             if revision != a["expected_revision"]: raise ValueError("Design changed during export; inspect again")
             if not path.parent.is_dir(): raise ValueError("Create the output folder inside the workspace first")

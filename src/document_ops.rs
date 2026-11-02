@@ -60,6 +60,9 @@ pub fn fresh_copies(
         .map(|original| {
             let mut copy = original.clone();
             copy.id = project.alloc_id();
+            if let Some(colors) = project.production.studio.colors.get(&original.id).cloned() {
+                project.production.studio.colors.insert(copy.id, colors);
+            }
             copy.group_id = original
                 .group_id
                 .map(|g| *groups.entry(g).or_insert_with(|| project.alloc_id()));
@@ -205,6 +208,27 @@ pub fn fitted_pages(destination: &mut Project, source: &Project) -> Vec<CanvasPa
             destination.imported_fonts.push(font.clone());
         }
     }
+    let mut token_keys = std::collections::HashMap::new();
+    for (key, color) in &source.production.studio.tokens {
+        let mut target = key.clone();
+        let mut suffix = 2;
+        while destination
+            .production
+            .studio
+            .tokens
+            .get(&target)
+            .is_some_and(|c| c != color)
+        {
+            target = format!("{key}_{suffix}");
+            suffix += 1;
+        }
+        destination
+            .production
+            .studio
+            .tokens
+            .insert(target.clone(), *color);
+        token_keys.insert(key.clone(), target);
+    }
     let scale =
         (destination.width / source.width.max(1.)).min(destination.height / source.height.max(1.));
     let dx = (destination.width - source.width * scale) / 2.;
@@ -216,7 +240,32 @@ pub fn fitted_pages(destination: &mut Project, source: &Project) -> Vec<CanvasPa
             let mut copy = page.clone();
             copy.id = destination.alloc_id();
             copy.elements = fresh_copies(destination, &page.elements, 0., 0.);
-            for element in &mut copy.elements {
+            if let Some(key) = source
+                .production
+                .studio
+                .backgrounds
+                .get(&page.id)
+                .and_then(|k| token_keys.get(k))
+            {
+                destination
+                    .production
+                    .studio
+                    .backgrounds
+                    .insert(copy.id, key.clone());
+            }
+            for (original, element) in page.elements.iter().zip(&mut copy.elements) {
+                destination.production.studio.colors.remove(&element.id);
+                if let Some(bindings) = source.production.studio.colors.get(&original.id) {
+                    destination.production.studio.colors.insert(
+                        element.id,
+                        bindings
+                            .iter()
+                            .filter_map(|(target, key)| {
+                                token_keys.get(key).map(|k| (target.clone(), k.clone()))
+                            })
+                            .collect(),
+                    );
+                }
                 element.x = element.x * scale + dx;
                 element.y = element.y * scale + dy;
                 scale_element(element, scale);

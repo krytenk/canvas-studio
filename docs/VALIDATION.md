@@ -1,5 +1,16 @@
 # Canvas Studio validation
 
+## 1.12.0 campaign/layout integration
+
+78 local Rust checks pass. New coverage exercises four independent layouts,
+shared copy/brand colours, exact rendered round trips, assets living only in
+inactive layouts/components, group-aware operations, lock rejection and linked
+typography materialized for component/selection scaling. The real STDIO campaign
+workflow passes named-layout previews/exports without changing the live document,
+selectable shared text in all PDFs, portable cold loading and ZIP CRC/manifest/
+pixel-dimension checks. The browser/native campaign acceptance is also a required
+CI workflow; see `scripts/campaign_smoke.py` and the campaign guide.
+
 ## 1.11.0 studio and agent integration
 
 75 release checks pass, including the 18-design / 27-page catalog, all-template

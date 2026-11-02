@@ -94,7 +94,7 @@ def run(binary,chrome):
             # Undo/redo operates on the native model, not a screenshot history.
             page.get_by_role('button',name='Undo',exact=True).click();page.wait_for_function("() => state.pages[0].title==='Invitation'")
             page.get_by_role('button',name='Redo',exact=True).click();page.wait_for_function("() => state.pages[0].title==='Invitation proof'")
-            page.wait_for_function("() => document.querySelector('#preview').complete && document.querySelector('#preview').naturalWidth>0")
+            page.wait_for_function("() => document.querySelector('#preview svg')!==null")
             page.screenshot(path=qa/'browser-desktop.png',full_page=True)
             with page.expect_download() as download:page.get_by_role('button',name='Export PDF',exact=True).click()
             download.value.save_as(qa/'edited.pdf')

@@ -69,11 +69,15 @@ pub struct ProductionSettings {
     pub styles: BTreeMap<String, SharedStyle>,
     pub book: crate::book_production::BookSettings,
     pub puzzles: Vec<crate::puzzle_production::WordSearchProduct>,
+    pub studio: crate::campaign::StudioSettings,
 }
 
 impl ProductionSettings {
     pub fn active(&self) -> bool {
-        !self.fields.is_empty() || !self.styles.is_empty() || self.book.enabled
+        !self.fields.is_empty()
+            || !self.styles.is_empty()
+            || self.book.enabled
+            || self.studio.active()
     }
 }
 
@@ -146,13 +150,10 @@ pub fn attach_image(field: &mut DataField, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn resolve_element(
+pub fn apply_style(
     element: &mut CanvasElement,
     settings: &ProductionSettings,
     strict: bool,
-    page_number: &str,
-    page_count: &str,
-    page_title: &str,
 ) -> Result<(), String> {
     if let Some(key) = &element.style_id {
         if let Some(style) = settings.styles.get(key) {
@@ -187,6 +188,18 @@ fn resolve_element(
             ));
         }
     }
+    Ok(())
+}
+
+fn resolve_element(
+    element: &mut CanvasElement,
+    settings: &ProductionSettings,
+    strict: bool,
+    page_number: &str,
+    page_count: &str,
+    page_title: &str,
+) -> Result<(), String> {
+    apply_style(element, settings, strict)?;
     if let ElementKind::Text { content, .. } = &mut element.kind {
         let source = content.clone();
         let mut edits = Vec::new();
@@ -282,6 +295,7 @@ fn resolve_element(
             return Err(format!("Photo field '{key}' has no image"));
         }
     }
+    crate::campaign::resolve_element(element, &settings.studio, strict)?;
     element.style_id = None;
     element.binding = None;
     Ok(())
@@ -300,6 +314,13 @@ pub fn resolve_page(
         return Ok(Cow::Borrowed(page));
     }
     let mut page = crate::book_production::compose_page(project, index)?;
+    if let Some(key) = project.production.studio.backgrounds.get(&page.id) {
+        if let Some(color) = project.production.studio.tokens.get(key) {
+            page.background = PageBackground::Solid(*color);
+        } else if strict {
+            return Err(format!("Missing page brand colour '{key}'"));
+        }
+    }
     let number = crate::book_production::page_number(project, index)?
         .map(|n| n.to_string())
         .unwrap_or_default();

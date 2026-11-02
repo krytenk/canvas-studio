@@ -4,10 +4,15 @@ mod book_production;
 mod book_tests;
 mod book_ui;
 mod browser_editor;
+mod campaign;
+#[cfg(test)]
+mod campaign_tests;
+mod campaign_ui;
 mod canvas_view;
 mod document_ops;
 mod exporter;
 mod imported_fonts;
+mod layout_commands;
 #[cfg(test)]
 mod library_tests;
 mod magic_studio;
@@ -185,6 +190,10 @@ struct CanvasStudioApp {
     studio_previews: std::collections::HashMap<String, egui::TextureHandle>,
     studio_search: String,
     studio_category: String,
+    campaign_name: String,
+    brand_key: String,
+    brand_value: ColorRgba,
+    component_key: String,
     production_key: String,
     shared_style_name: String,
     batch_editable: bool,
@@ -266,6 +275,10 @@ impl CanvasStudioApp {
             studio_previews: Default::default(),
             studio_search: String::new(),
             studio_category: "All templates".into(),
+            campaign_name: "New layout".into(),
+            brand_key: "accent".into(),
+            brand_value: rgb(213, 241, 113),
+            component_key: "My_component".into(),
             production_key: String::new(),
             shared_style_name: String::new(),
             batch_editable: false,
@@ -1062,7 +1075,11 @@ impl CanvasStudioApp {
             Some(existing)
         } else {
             rfd::FileDialog::new()
-                .set_file_name("design.canvas.json")
+                .set_file_name(if self.project.production.studio.active() {
+                    "design.canvas"
+                } else {
+                    "design.canvas.json"
+                })
                 .save_file()
         };
         if let Some(path) = target_path {
@@ -2698,6 +2715,8 @@ impl CanvasStudioApp {
     }
 
     fn render_dock_templates(&mut self, ui: &mut Ui) {
+        self.render_campaign_layouts(ui);
+        ui.separator();
         ui.heading("Design library");
         ui.label(
             RichText::new("Campaigns, stories and print. Thoughtfully started.")
@@ -3050,6 +3069,8 @@ impl CanvasStudioApp {
     }
 
     fn render_dock_brand_kit(&mut self, ui: &mut Ui) {
+        self.render_campaign_brand(ui);
+        ui.separator();
         ui.heading("👑 Brand Kit");
         ui.label(
             RichText::new(

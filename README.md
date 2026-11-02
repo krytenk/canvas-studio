@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.11.0**, with imported fonts, rich paragraphs, portable
+Current development: **1.12.0**, with imported fonts, rich paragraphs, portable
 projects, linked collections/CSV production, books, checked word searches and local browser editing. An 18-design visual catalog includes editable Instagram
 carousels/stories and YouTube thumbnails/channel artwork.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
@@ -22,6 +22,14 @@ native editable files or print outputs. No paid service or Node runtime is neede
 This is a local browser editor backed by the desktop engine; it is not a hosted
 multi-user customer service. See the [browser guide](docs/BROWSER-EDITOR.md) for
 supported controls, recovery, delivery formats and limits.
+
+## Linked campaigns
+
+A [campaign](docs/CAMPAIGN-STUDIO.md) keeps separately composed print, Instagram
+and YouTube layouts in one portable project. Shared copy/brand colours and reusable
+groups stay linked. Browser layout tools support multi-selection, grouping,
+proportional resizing, alignment/distribution and keyboard nudges. Download all
+formats as a campaign bundle with the editable master and output manifest.
 
 ## Design with a coding agent
 

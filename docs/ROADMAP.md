@@ -29,3 +29,13 @@ adapter; then practical optional Three.js product mockups. Video, HyperFrames
 rendering and 3D editing are planned work, not current app capabilities. Each
 stage has an acceptance workflow in the review. Local storage is sufficient;
 remote hosting remains a separate decision.
+
+### Stage B — implemented in 1.12
+
+[Campaign studio](CAMPAIGN-STUDIO.md) adds independently composed layouts in one
+portable project, common copy/colour links, reusable groups and group-aware
+browser layout controls through shared native/browser/MCP commands. Named-layout
+preview/export and campaign ZIP delivery preserve the live editing state.
+Reusable instances keep independent geometry; live definition overrides remain
+future work. The next implementation milestone is C: persisted video/audio
+tracks, proxies, trim/split, gain/fades and captions before effects or 3D.

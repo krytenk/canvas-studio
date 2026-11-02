@@ -1465,21 +1465,26 @@ pub fn dehydrate_project_assets(project: &Project) -> Project {
 
 pub fn hydrate_project_assets(project: &mut Project) {
     let store = crate::model::asset_store::AssetStore::global();
-    for page in &mut project.pages {
-        for elem in &mut page.elements {
-            if let ElementKind::Image { raw_rgba, .. } = &mut elem.kind {
-                if raw_rgba.starts_with(DEHYDRATED_MARKER_PREFIX) {
-                    if let Ok(asset_id) =
-                        std::str::from_utf8(&raw_rgba[DEHYDRATED_MARKER_PREFIX.len()..])
-                    {
-                        if let Some(stored) = store.get(asset_id) {
-                            *raw_rgba = stored.decoded_rgba.into();
-                        }
+    let hydrate = |elem: &mut CanvasElement| {
+        if let ElementKind::Image { raw_rgba, .. } = &mut elem.kind {
+            if raw_rgba.starts_with(DEHYDRATED_MARKER_PREFIX) {
+                if let Ok(id) = std::str::from_utf8(&raw_rgba[DEHYDRATED_MARKER_PREFIX.len()..]) {
+                    if let Some(asset) = store.get(id) {
+                        *raw_rgba = asset.decoded_rgba.into();
                     }
                 }
             }
         }
+    };
+    for page in &mut project.pages {
+        for e in &mut page.elements {
+            hydrate(e);
+        }
     }
+    for e in &mut project.production.book.master_elements {
+        hydrate(e);
+    }
+    crate::campaign::for_each_extra_mut(&mut project.production.studio, hydrate);
 }
 
 /// Undo / Redo snapshot history stack (stores asset-dehydrated snapshots and their revision numbers)

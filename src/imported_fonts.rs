@@ -108,6 +108,11 @@ pub fn register_project(project: &Project) -> Result<(), String> {
         .iter()
         .flat_map(|p| &p.elements)
         .chain(&project.production.book.master_elements)
+        .chain(
+            crate::campaign::asset_sets(&project.production.studio)
+                .into_iter()
+                .flat_map(|(_, e)| e),
+        )
     {
         if let ElementKind::Text {
             font_family,

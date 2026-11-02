@@ -27,6 +27,7 @@ impl Drop for Scratch {
     }
 }
 fn validate_document(project: &Project) -> Result<(), String> {
+    crate::campaign::validate(project)?;
     if project.pages.is_empty()
         || project.pages.len() > 1000
         || [
@@ -183,7 +184,15 @@ fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request
     }
     if let Some((host, token)) = gate {
         let static_page = method == "GET"
-            && ["/", "/app.js", "/studio.js", "/style.css"].contains(&path.as_str());
+            && [
+                "/",
+                "/app.js",
+                "/studio.js",
+                "/layout.js",
+                "/bundle.js",
+                "/style.css",
+            ]
+            .contains(&path.as_str());
         if headers.get("host").map(String::as_str) != Some(host)
             || headers
                 .get("origin")
@@ -327,6 +336,25 @@ fn element_mut<'a>(p: &'a mut Project, v: &Value) -> Result<&'a mut CanvasElemen
 }
 fn edit(project: &mut Project, v: &Value) -> Result<(), String> {
     let action = string(v, "action")?;
+    if crate::layout_commands::supports(action) {
+        return crate::layout_commands::apply(project, v);
+    }
+    if matches!(action, "text" | "shape") {
+        let layer = id(v, "id")?;
+        if let Some(bindings) = project.production.studio.colors.get(&layer) {
+            for (property, target) in if action == "text" {
+                vec![("color", "text")]
+            } else {
+                vec![("color", "fill"), ("stroke_color", "stroke")]
+            } {
+                if v.get(property).is_some() && bindings.contains_key(target) {
+                    return Err(format!(
+                        "Unlink the named {target} colour before applying a local override"
+                    ));
+                }
+            }
+        }
+    }
     match action {
         "title" => {
             let value = string(v, "value")?;
@@ -724,7 +752,7 @@ fn state(s: &Session, page: usize) -> Value {
     let page = page.min(p.pages.len().saturating_sub(1));
     let unit = p.effective_units_per_inch() / 72.;
     let elements=p.pages[page].elements.iter().map(|e|{
-        let mut value=json!({"id":e.id.to_string(),"name":e.name,"x":e.x,"y":e.y,"width":e.width,"height":e.height,"rotation":e.rotation,"opacity":e.opacity,"locked":e.locked,"visible":e.visible,"linked_style":e.style_id,"binding":e.binding});
+        let mut value=json!({"id":e.id.to_string(),"name":e.name,"x":e.x,"y":e.y,"width":e.width,"height":e.height,"rotation":e.rotation,"opacity":e.opacity,"locked":e.locked,"visible":e.visible,"linked_style":e.style_id,"binding":e.binding,"group_id":e.group_id.map(|id|id.to_string()),"brand_colors":p.production.studio.colors.get(&e.id)});
         match &e.kind{ElementKind::Text{content,font_family,font_size,color,bold,italic,underline,line_height,letter_spacing,..}=>{value["type"]=json!("text");value["content"]=json!(content);value["family"]=json!(family(*font_family));value["size"]=json!(*font_size/unit);value["color"]=json!(format!("#{:02x}{:02x}{:02x}",color[0],color[1],color[2]));value["bold"]=json!(bold);value["italic"]=json!(italic);value["underline"]=json!(underline);value["leading"]=json!(line_height);value["tracking"]=json!(letter_spacing);value["paragraph"]=json!(e.text_format);},ElementKind::Image{..}=>value["type"]=json!("image"),ElementKind::Shape{shape_type,fill,stroke_color,stroke_width,corner_radius}=>{value["type"]=json!("shape");value["shape"]=json!(shape_type);value["fill"]=json!(fill);value["stroke_color"]=json!(stroke_color);value["stroke_width"]=json!(stroke_width);value["corner_radius"]=json!(corner_radius);},_=>value["type"]=json!("artwork")};value
     }).collect::<Vec<_>>();
     let fields=p.production.fields.iter().map(|(key,field)|json!({"key":key,"value":field.value,"required":field.required,"image":field.image})).collect::<Vec<_>>();
@@ -737,17 +765,42 @@ fn state(s: &Session, page: usize) -> Value {
             .iter()
             .map(|f| json!({"id":family(FontFamily::Imported(f.id)),"name":f.name})),
     );
-    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some()})
+    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p)})
+}
+fn studio_state(p: &Project) -> Value {
+    let s = &p.production.studio;
+    let mut variants=s.variants.iter().map(|(name,v)|json!({"name":name,"width":v.width,"height":v.height,"pages":v.pages.len(),"active":false})).collect::<Vec<_>>();
+    if let Some(name) = &s.active_variant {
+        variants.insert(0,json!({"name":name,"width":p.width,"height":p.height,"pages":p.pages.len(),"active":true}));
+    }
+    json!({"tokens":s.tokens.iter().map(|(key,c)|json!({"key":key,"color":crate::campaign::color_hex(*c)})).collect::<Vec<_>>(),"background":s.backgrounds.get(&p.pages[0].id),"variants":variants,"components":s.components.iter().map(|(key,c)|json!({"key":key,"name":c.name,"width":c.width,"height":c.height,"layers":c.elements.len()})).collect::<Vec<_>>()})
 }
 fn preflight_value(project: &Project) -> Value {
     let report = run_export_preflight(project, 300);
     json!({"issues":report.issues.iter().map(|i|json!({"page_index":i.page_index,"element_id":i.element_id.to_string(),"element_name":i.element_name,"severity":format!("{:?}",i.severity),"category":i.category,"message":i.message})).collect::<Vec<_>>()})
 }
 fn query(path: &str, key: &str) -> Option<String> {
-    path.split_once('?')?.1.split('&').find_map(|pair| {
+    let value = path.split_once('?')?.1.split('&').find_map(|pair| {
         let (k, v) = pair.split_once('=')?;
-        (k == key).then(|| v.to_string())
-    })
+        (k == key).then_some(v)
+    })?;
+    let mut out = Vec::new();
+    let bytes = value.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return None;
+            }
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
     let base = req.path.split('?').next().unwrap_or("");
@@ -771,6 +824,13 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         }
     }
     if req.method == "GET" {
+        let mut alternate = None;
+        if let Some(name) = query(&req.path, "variant") {
+            let mut p = s.project.clone();
+            crate::campaign::activate(&mut p, &name)?;
+            alternate = Some(p);
+        }
+        let read_project = alternate.as_ref().unwrap_or(&s.project);
         return match base {
             "/api/templates" => Ok(Response::value(
                 crate::studio_catalog::catalog(),
@@ -786,7 +846,7 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
             }
             "/api/thumbnail" => Ok(Response::bytes(
                 "image/png",
-                crate::studio_catalog::thumbnail(&s.project, page, 240)?,
+                crate::studio_catalog::thumbnail(read_project, page, 240)?,
                 s.revision,
             )),
             "/api/revision" => Ok(Response::value(
@@ -800,13 +860,13 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                     .map_err(|_| "Invalid preview edge")?;
                 Ok(Response::bytes(
                     "image/png",
-                    crate::studio_catalog::thumbnail(&s.project, page, edge)?,
+                    crate::studio_catalog::thumbnail(read_project, page, edge)?,
                     s.revision,
                 ))
             }
             "/api/state" => Ok(Response::value(state(s, page), s.revision)),
             "/api/preview.svg" => {
-                let proof = production::resolve(&s.project, false)?;
+                let proof = production::resolve(read_project, false)?;
                 let svg = exporter::export_project_page_to_svg(&proof, page, false)?;
                 Ok(Response::bytes(
                     "image/svg+xml",
@@ -814,11 +874,11 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                     s.revision,
                 ))
             }
-            "/api/preflight" => Ok(Response::value(preflight_value(&s.project), s.revision)),
+            "/api/preflight" => Ok(Response::value(preflight_value(read_project), s.revision)),
             "/api/download.canvas" => {
                 let scratch = Scratch::new()?;
                 let path = scratch.0.join("design.canvas");
-                project_package::save(&s.project, &path)?;
+                project_package::save(read_project, &path)?;
                 let mut r = Response::bytes(
                     "application/octet-stream",
                     fs::read(path).map_err(|e| e.to_string())?,
@@ -828,9 +888,9 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 Ok(r)
             }
             "/api/download.pdf" => {
-                check_delivery(&s.project)?;
+                check_delivery(read_project)?;
                 let bytes = model::pdf_export::export_project_to_pdf_bytes(
-                    &s.project,
+                    read_project,
                     &PdfExportOptions::default(),
                 )?;
                 let mut r = Response::bytes("application/pdf", bytes, s.revision);
@@ -838,7 +898,7 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 Ok(r)
             }
             "/api/download.png" => {
-                check_delivery(&s.project)?;
+                check_delivery(read_project)?;
                 let dpi = query(&req.path, "dpi")
                     .unwrap_or("150".into())
                     .parse::<u32>()
@@ -851,7 +911,7 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 if w * h > 100_000_000. || w.max(h) > 18000. {
                     return Err("Output exceeds raster size limit".into());
                 }
-                let image = exporter::render_project_page_at_dpi(&s.project, page, dpi, false)?;
+                let image = exporter::render_project_page_at_dpi(read_project, page, dpi, false)?;
                 let mut bytes = Vec::new();
                 image
                     .write_to(
@@ -931,6 +991,13 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                     {
                         command["id"] = json!(refs.get(alias).ok_or("Unknown layer reference")?);
                     }
+                    if let Some(ids) = command.get_mut("ids").and_then(Value::as_array_mut) {
+                        for id in ids {
+                            if let Some(alias) = id.as_str().and_then(|s| s.strip_prefix('$')) {
+                                *id = json!(refs.get(alias).ok_or("Unknown layer reference")?);
+                            }
+                        }
+                    }
                     let creates =
                         matches!(command["action"].as_str(), Some("add_text" | "add_shape"));
                     let next = candidate.next_id;
@@ -945,6 +1012,7 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                     }
                 }
                 let dry_run = value["dry_run"].as_bool().unwrap_or(false);
+                validate_document(&candidate)?;
                 let report = preflight_value(&candidate);
                 if !dry_run {
                     s.commit(candidate)?;
@@ -1097,6 +1165,14 @@ fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Sessi
             "/" => Some((
                 "text/html; charset=utf-8",
                 include_bytes!("../web/index.html").as_slice(),
+            )),
+            "/bundle.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_bytes!("../web/bundle.js").as_slice(),
+            )),
+            "/layout.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_bytes!("../web/layout.js").as_slice(),
             )),
             "/studio.js" => Some((
                 "text/javascript; charset=utf-8",

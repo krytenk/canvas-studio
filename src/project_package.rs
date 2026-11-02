@@ -17,6 +17,8 @@ struct Envelope {
     version: u32,
     project: String,
     assets: BTreeMap<String, String>,
+    #[serde(default)]
+    required_features: Vec<String>,
 }
 
 struct Scratch(PathBuf);
@@ -44,7 +46,7 @@ pub fn is_package(path: &Path) -> bool {
 pub fn save(project: &Project, path: &Path) -> Result<(), String> {
     let scratch = Scratch::new()?;
     let manifest = scratch.0.join("project.canvas.json");
-    crate::exporter::save_project_json(project, &manifest)?;
+    crate::exporter::save_project_manifest(project, &manifest)?;
     let mut assets = BTreeMap::new();
     let folder = scratch.0.join("assets");
     if folder.is_dir() {
@@ -58,7 +60,16 @@ pub fn save(project: &Project, path: &Path) -> Result<(), String> {
         }
     }
     let envelope = Envelope {
-        version: 1,
+        version: if project.production.studio.active() {
+            2
+        } else {
+            1
+        },
+        required_features: if project.production.studio.active() {
+            vec!["studio-campaign-v1".into()]
+        } else {
+            vec![]
+        },
         project: fs::read_to_string(manifest).map_err(|e| e.to_string())?,
         assets,
     };
@@ -116,7 +127,14 @@ pub fn load(path: &Path) -> Result<Project, String> {
         return Err("Unpacked project exceeds the size limit".into());
     }
     let envelope: Envelope = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if envelope.version != 1 || envelope.assets.len() > 10_000 {
+    if ![1, 2].contains(&envelope.version)
+        || envelope.assets.len() > 10_000
+        || envelope
+            .required_features
+            .iter()
+            .any(|f| f != "studio-campaign-v1")
+        || (envelope.version == 2 && envelope.required_features.is_empty())
+    {
         return Err("Unsupported portable project version or asset count".into());
     }
     let scratch = Scratch::new()?;
@@ -154,6 +172,7 @@ mod tests {
         let path = root.0.join("invalid.canvas");
         let bad = Envelope {
             version: 1,
+            required_features: vec![],
             project: "{}".into(),
             assets: BTreeMap::from([("../outside.png".into(), String::new())]),
         };

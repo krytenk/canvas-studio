@@ -137,3 +137,31 @@ embedding, stale revisions, wrong documents, traversal/symlink rejection,
 no-overwrite and absence of credentials in returned results. CI repeats it.
 It does not certify interoperability with every MCP client; client configuration
 and a real design task in the selected client remain the integration acceptance.
+
+## 1.12 campaign and layout commands
+
+The 11 tools now expose campaign work through `studio_edit`. `campaign_create`
+starts four purpose-composed formats. `variant_save(name)` duplicates the active
+layout with fresh identities; `variant_activate(name)` switches it. The document
+handle remains the campaign's handle and revisions still guard every change.
+`field_define(key,value,required)` defines shared text, `brand_token(key,color)`
+defines named RGB colours and `brand_bind(page,ids,token,target)` links selected
+layers. Use an explicit null token to unlink. `brand_background(page,token)` links
+or unlinks a page background. Targets are primary/text/fill/stroke.
+
+`component_save(page,ids,key,name)` captures a reusable group;
+`component_insert(page,key,x,y,width)` inserts a grouped independent instance
+retaining field/colour links. Selection commands accept page/ids and expand
+complete groups: move(dx,dy), transform(x,y,width,height), align(direction),
+distribute(direction), group, ungroup, duplicate and delete, all prefixed with
+`selection_`. Transform preserves proportions and materializes linked typography
+before scaling; copy and named colours remain linked. Named refs also work in
+`ids` arrays within an atomic batch.
+
+`studio_document` includes tokens, layout dimensions/names, saved groups, layer
+group IDs and colour links. `studio_preview(layout:NAME)` and
+`studio_export(layout:NAME,format:"pdf"|"png")` read a named layout without
+changing live editing state. `studio_export(format:"zip",path:"campaign.zip")`
+delivers every layout plus the editable project and manifest (up to 100 pages /
+128 MiB). The new portable envelope guards campaign data against older builds.
+See the [campaign workflow](CAMPAIGN-STUDIO.md) for ownership rules and limits.

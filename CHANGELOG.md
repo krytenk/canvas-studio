@@ -1,5 +1,13 @@
 # Changes
 
+## 1.12.0 — linked campaign production
+
+- Added portable campaigns with separately composed Instagram post/story, YouTube thumbnail and A4 layouts, shared copy, named colour links and a project library of reusable editable groups.
+- Added group-aware browser multi-selection, movement, live native-SVG feedback, proportional scaling, alignment/distribution, grouping, duplication and keyboard nudges. Desktop campaign/brand controls and MCP use the same command engine.
+- Components retain shared fields/colours while owning their geometry and captured typography. Scaling materializes linked text styles locally so type scales correctly.
+- Added non-mutating named-layout previews/exports and bounded campaign ZIP delivery with editable master, PDFs, PNGs and manifest.
+- New-feature projects use a guarded version-2 portable envelope, including all inactive layout/component assets; older builds reject them. Existing static projects remain compatible.
+
 ## 1.11.0 — local coding-agent control
 
 - Added a standard-library Python STDIO MCP adapter with 11 tools for live browser inspection, templates, blank composition, atomic/dry-run batches, image previews, preflight, workspace exports, portable opening, font/photo import and undo/redo.
