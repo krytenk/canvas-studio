@@ -29,7 +29,7 @@ export async function createMockup(canvas,spec,frontURL,backURL){
  }else{
   const cardDepth=Math.min(.018,D/5);for(let i=0;i<5;i++){const o=mesh(W,H,cardDepth,[edge,edge,edge,edge,face,rear],(i-2)*.014,-(i-2)*.012,(i-2)*cardDepth*1.6);o.rotation.z=(i-4)*.012;}
  }
- const floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),surface(spec.background));floor.rotation.x=-Math.PI/2;floor.position.y=-H/2-.012;floor.receiveShadow=false;scene.add(floor);
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshBasicMaterial({color:spec.background,toneMapped:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-H/2-.012;floor.receiveShadow=false;scene.add(floor);
  // A deterministic soft contact shadow avoids a harsh cut-out cast shadow in listing images.
  const shadowCanvas=document.createElement('canvas');shadowCanvas.width=256;shadowCanvas.height=256;const ctx=shadowCanvas.getContext('2d');const gradient=ctx.createRadialGradient(128,128,5,128,128,120);gradient.addColorStop(0,'rgba(20,27,22,0.40)');gradient.addColorStop(.35,'rgba(20,27,22,0.25)');gradient.addColorStop(1,'rgba(20,27,22,0)');ctx.fillStyle=gradient;ctx.fillRect(0,0,256,256);
  const shadowTexture=new THREE.CanvasTexture(shadowCanvas);const shadow=new THREE.Mesh(new THREE.PlaneGeometry(W*1.75,Math.max(.65,D*3)),new THREE.MeshBasicMaterial({map:shadowTexture,transparent:true,depthWrite:false}));shadow.rotation.x=-Math.PI/2;shadow.position.y=-H/2-.009;scene.add(shadow);
