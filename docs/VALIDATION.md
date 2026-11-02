@@ -1,5 +1,12 @@
 # Canvas Studio validation
 
+## 1.6.0 local validation
+
+51 release checks include collection-wide field/style updates with master preservation,
+portable photo fields, unfilled template masters, CSV quoting/Unicode, and a
+52-record job with 50 successful PDFs/proofs plus two reported invalid records.
+Collection PDF text extraction confirms the updated names/date on all five pages.
+
 ## 1.5.0 local validation
 
 47 release checks cover the previous workflows plus a moved single-file project

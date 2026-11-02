@@ -34,6 +34,8 @@ fn element(kind: ElementKind) -> CanvasElement {
         animation: ElementAnimation::None,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind,
     }
 }

@@ -279,6 +279,7 @@ pub fn convert_layout_collection_to_project(
         brand_kit: BrandKit::default(),
         imported_fonts: Vec::new(),
         print_settings: Default::default(),
+        production: Default::default(),
         next_id,
     })
 }
@@ -356,6 +357,8 @@ fn convert_layout_op(id: u64, op_idx: usize, op: &LayoutOp) -> Result<CanvasElem
                 animation: ElementAnimation::None,
                 group_id: None,
                 text_format: Default::default(),
+                style_id: None,
+                binding: None,
                 kind: ElementKind::Shape {
                     shape_type,
                     fill: FillStyle::Solid(fill_color),
@@ -432,6 +435,8 @@ fn convert_layout_op(id: u64, op_idx: usize, op: &LayoutOp) -> Result<CanvasElem
                 animation: ElementAnimation::None,
                 group_id: None,
                 text_format: Default::default(),
+                style_id: None,
+                binding: None,
                 kind: ElementKind::Text {
                     content: text.clone(),
                     font_family,
@@ -505,6 +510,8 @@ fn convert_layout_op(id: u64, op_idx: usize, op: &LayoutOp) -> Result<CanvasElem
                 animation: ElementAnimation::None,
                 group_id: None,
                 text_format: Default::default(),
+                style_id: None,
+                binding: None,
                 kind: ElementKind::Image {
                     source_name: file_name,
                     width_px: stored.width_px,

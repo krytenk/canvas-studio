@@ -357,6 +357,8 @@ pub fn extract_magic_layers_from_image(
         animation: ElementAnimation::Rise,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind: ElementKind::Shape {
             shape_type: ShapeType::RoundedRect,
             fill: FillStyle::LinearGradient {
@@ -391,6 +393,8 @@ pub fn extract_magic_layers_from_image(
             animation: ElementAnimation::Pop,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Circle,
                 fill: FillStyle::Solid(*col),
@@ -421,6 +425,8 @@ pub fn extract_magic_layers_from_image(
         animation: ElementAnimation::Fade,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind: ElementKind::Text {
             content: "MAGIC LAYER\nEXTRACTED".to_string(),
             font_family: FontFamily::PosterHeavy,

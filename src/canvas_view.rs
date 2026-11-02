@@ -206,7 +206,8 @@ pub fn render_interactive_canvas(
         Color32::from_black_alpha(110),
     );
 
-    let Some(page) = project.pages.get(current_page_idx) else {
+    let preview = crate::production::resolve_page(project, current_page_idx, false);
+    let Ok(page) = preview else {
         return CanvasAction::None;
     };
 
@@ -385,6 +386,8 @@ pub fn render_interactive_canvas(
                     animation: ElementAnimation::None,
                     group_id: None,
                     text_format: Default::default(),
+                    style_id: None,
+                    binding: None,
                     kind: ElementKind::FreehandPath {
                         points: norm_pts,
                         color: state.draw_color,

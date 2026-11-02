@@ -860,6 +860,10 @@ pub struct CanvasElement {
     pub group_id: Option<u64>,
     #[serde(default)]
     pub text_format: TextFormatting,
+    #[serde(default)]
+    pub style_id: Option<String>,
+    #[serde(default)]
+    pub binding: Option<String>,
     pub kind: ElementKind,
 }
 
@@ -882,6 +886,8 @@ impl CanvasElement {
             animation: self.animation,
             group_id: self.group_id,
             text_format: self.text_format.clone(),
+            style_id: self.style_id.clone(),
+            binding: self.binding.clone(),
             kind,
         }
     }
@@ -1100,6 +1106,8 @@ pub struct Project {
     pub imported_fonts: Vec<crate::imported_fonts::ImportedFont>,
     #[serde(default)]
     pub print_settings: PrintSettings,
+    #[serde(default)]
+    pub production: crate::production::ProductionSettings,
     pub next_id: u64,
 }
 
@@ -1125,6 +1133,7 @@ impl Default for Project {
             brand_kit: BrandKit::default(),
             imported_fonts: Vec::new(),
             print_settings: Default::default(),
+            production: Default::default(),
             next_id: 100,
         }
     }
@@ -1434,6 +1443,7 @@ impl SnapshotCache {
             brand_kit: project.brand_kit.clone(),
             imported_fonts: project.imported_fonts.clone(),
             print_settings: project.print_settings.clone(),
+            production: project.production.clone(),
             next_id: project.next_id,
         }
     }

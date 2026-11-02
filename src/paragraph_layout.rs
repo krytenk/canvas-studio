@@ -49,7 +49,7 @@ pub fn layout_formatted(
         };
         let mut text = prefix;
         let mut mapping = std::collections::HashMap::new();
-        for (index, ch) in source.chars().enumerate() {
+        for (index, ch) in source.trim_end_matches('\r').chars().enumerate() {
             let rendered = if uppercase {
                 ch.to_uppercase().collect::<String>()
             } else {

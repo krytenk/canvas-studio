@@ -186,6 +186,20 @@ pub fn set_geometry(
 
 /// Insert every source page, preserving its proportions inside the destination.
 pub fn fitted_pages(destination: &mut Project, source: &Project) -> Vec<CanvasPage> {
+    for (key, field) in &source.production.fields {
+        destination
+            .production
+            .fields
+            .entry(key.clone())
+            .or_insert_with(|| field.clone());
+    }
+    for (key, style) in &source.production.styles {
+        destination
+            .production
+            .styles
+            .entry(key.clone())
+            .or_insert_with(|| style.clone());
+    }
     for font in &source.imported_fonts {
         if !destination.imported_fonts.iter().any(|f| f.id == font.id) {
             destination.imported_fonts.push(font.clone());

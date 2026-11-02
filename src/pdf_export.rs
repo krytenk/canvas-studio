@@ -80,6 +80,22 @@ impl PreflightReport {
 
 pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightReport {
     let mut issues = Vec::new();
+    let resolved = match crate::production::resolve(project, true) {
+        Ok(project) => project,
+        Err(message) => {
+            return PreflightReport {
+                issues: vec![PreflightIssue {
+                    page_index: 0,
+                    element_id: 0,
+                    element_name: "Production fields/styles".into(),
+                    severity: PreflightSeverity::Error,
+                    category: "production",
+                    message,
+                }],
+            }
+        }
+    };
+    let project = resolved.as_ref();
     let registry = FontRegistry::global();
     if let Err(message) = crate::imported_fonts::register_project(project) {
         issues.push(PreflightIssue {
@@ -372,6 +388,8 @@ pub fn export_project_to_pdf_bytes(
     project: &Project,
     options: &PdfExportOptions,
 ) -> Result<Vec<u8>, String> {
+    let resolved = crate::production::resolve(project, true)?;
+    let project = resolved.as_ref();
     if project.pages.is_empty() {
         return Err("Project contains no pages to export".to_string());
     }
@@ -543,6 +561,8 @@ fn build_pdf_page_stream(
             animation: crate::model::ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(bg),

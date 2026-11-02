@@ -1,5 +1,12 @@
 # Changes
 
+## 1.6.0 — linked collections and CSV production
+
+- Added collection text/photo fields and named shared typography styles. Preview and PDF/PNG/SVG/HTML resolve them without changing the editable master.
+- Personal masters may retain unfilled required fields; delivery exports identify missing data. Optional empty photo fields are omitted. Embedded field photos travel with portable projects.
+- Added background CSV production with quoted Unicode values, local relative photo paths, per-record preflight and JSON completion reports. Successful records receive PDFs and raster proofs; editable working copies are optional.
+- Validated a five-page coordinated collection, photo reuse/portability and a 52-record batch: 50 valid records completed, two invalid/overflow records reported.
+
 ## 1.5.0 — print guides, output presets and portable projects
 
 - Added compressed, versioned `.canvas` projects containing the editable design, image assets and imported fonts. Open them through the ordinary project dialog; save a portable copy from Export. Checked loading rejects damaged archives, unsafe asset names and oversized contents.

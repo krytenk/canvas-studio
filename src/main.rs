@@ -1,3 +1,4 @@
+mod batch_production;
 mod canvas_view;
 mod document_ops;
 mod exporter;
@@ -9,6 +10,10 @@ mod model;
 mod paragraph_layout;
 #[cfg(test)]
 mod print_studio_tests;
+mod production;
+#[cfg(test)]
+mod production_tests;
+mod production_ui;
 mod project_package;
 mod template_library;
 mod templates;
@@ -65,6 +70,7 @@ enum DockTab {
     ChartsAndTables,
     Draw,
     Layers,
+    Production,
     AppInfo,
 }
 
@@ -80,6 +86,7 @@ impl DockTab {
             DockTab::ChartsAndTables,
             DockTab::Draw,
             DockTab::Layers,
+            DockTab::Production,
             DockTab::AppInfo,
         ]
     }
@@ -95,6 +102,7 @@ impl DockTab {
             DockTab::ChartsAndTables => ("📊", "Charts"),
             DockTab::Draw => ("✏", "Draw"),
             DockTab::Layers => ("☰", "Layers"),
+            DockTab::Production => ("▤", "Production"),
             DockTab::AppInfo => ("ⓘ", "About"),
         }
     }
@@ -156,6 +164,11 @@ struct CanvasStudioApp {
     library_name: String,
     library_tags: String,
     library_previews: std::collections::HashMap<String, egui::TextureHandle>,
+    production_key: String,
+    shared_style_name: String,
+    batch_editable: bool,
+    production_job:
+        Option<std::sync::mpsc::Receiver<Result<crate::batch_production::BatchReport, String>>>,
     output_preset_name: String,
     new_guide_mm: f32,
     inspector_unit: u8,
@@ -222,6 +235,10 @@ impl CanvasStudioApp {
             library_name: String::new(),
             library_tags: String::new(),
             library_previews: Default::default(),
+            production_key: String::new(),
+            shared_style_name: String::new(),
+            batch_editable: false,
+            production_job: None,
             output_preset_name: "Print output".into(),
             new_guide_mm: 10.,
             inspector_unit: 0,
@@ -1255,6 +1272,8 @@ impl CanvasStudioApp {
                         animation: ElementAnimation::Fade,
                         group_id: None,
                         text_format: Default::default(),
+                        style_id: None,
+                        binding: None,
                         kind: ElementKind::Image {
                             source_name: fname.clone(),
                             width_px: w,
@@ -1287,6 +1306,7 @@ impl eframe::App for CanvasStudioApp {
 
 impl CanvasStudioApp {
     fn update_ui(&mut self, ctx: &Context) {
+        self.poll_production_job();
         apply_canvas_studio_theme(ctx);
         ctx.request_repaint_after(std::time::Duration::from_secs(1));
         self.maybe_run_autosave(ctx.input(|i| i.time));
@@ -1748,6 +1768,7 @@ impl CanvasStudioApp {
                                         brand_kit: Default::default(),
                                         imported_fonts: Vec::new(),
                                         print_settings: Default::default(),
+                                        production: Default::default(),
                                         next_id: 100,
                                     };
                                     let msg = format!("Created new {} project", fmt.label());
@@ -2518,6 +2539,7 @@ impl CanvasStudioApp {
                     DockTab::ChartsAndTables => self.render_dock_charts_tables(ui),
                     DockTab::Draw => self.render_dock_draw(ui),
                     DockTab::Layers => self.render_dock_layers(ui),
+                    DockTab::Production => self.render_production(ui),
                     DockTab::AppInfo => self.render_dock_app_info(ui),
                 });
             });
@@ -2780,6 +2802,8 @@ impl CanvasStudioApp {
                             animation: ElementAnimation::Pop,
                             group_id: None,
                             text_format: Default::default(),
+                            style_id: None,
+                            binding: None,
                             kind: ElementKind::Shape {
                                 shape_type: *st,
                                 fill: FillStyle::Solid(col),
@@ -2979,6 +3003,8 @@ impl CanvasStudioApp {
                 animation: ElementAnimation::Fade,
                 group_id: None,
                 text_format: Default::default(),
+                style_id: None,
+                binding: None,
                 kind: ElementKind::Text {
                     content: content.to_string(),
                     font_family,
@@ -3357,6 +3383,8 @@ impl CanvasStudioApp {
                         animation: ElementAnimation::Rise,
                         group_id: None,
                         text_format: Default::default(),
+                        style_id: None,
+                        binding: None,
                         kind: ElementKind::Chart {
                             chart_type: *ct,
                             title: "Quarterly Growth Metrics".to_string(),
@@ -3415,6 +3443,8 @@ impl CanvasStudioApp {
                     animation: ElementAnimation::Fade,
                     group_id: None,
                     text_format: Default::default(),
+                    style_id: None,
+                    binding: None,
                     kind: ElementKind::Table {
                         rows: 3,
                         cols: 3,
@@ -4363,8 +4393,8 @@ impl CanvasStudioApp {
                         .set_file_name("design.svg")
                         .save_file()
                     {
-                        if let Some(page) = self.project.pages.get(self.current_page_idx) {
-                            let result = export_page_to_svg(page,self.project.width,self.project.height,self.export_transparent)
+                        if self.project.pages.get(self.current_page_idx).is_some() {
+                            let result = crate::exporter::export_project_page_to_svg(&self.project,self.current_page_idx,self.export_transparent)
                                 .and_then(|svg|std::fs::write(&path,svg).map_err(|e|e.to_string()));
                             self.status_banner=match result {
                                 Ok(())=>format!("Exported Vector SVG to {}",path.display()),
@@ -4662,6 +4692,8 @@ mod tests {
             animation: ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(rgba(0, 0, 0, 0)),
@@ -4703,6 +4735,8 @@ mod tests {
             animation: ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(rgb(20, 20, 20)),
@@ -4742,6 +4776,8 @@ mod tests {
             animation: ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Image {
                 source_name: "blue.png".to_string(),
                 width_px: 64,
@@ -4805,6 +4841,7 @@ mod tests {
             brand_kit: Default::default(),
             imported_fonts: Vec::new(),
             print_settings: Default::default(),
+            production: Default::default(),
             next_id: 50,
         };
         let (pt_w, pt_h) = proj.pdf_points_dimensions();
@@ -4828,6 +4865,8 @@ mod tests {
             animation: ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(rgb(0, 0, 0)),
@@ -4853,6 +4892,8 @@ mod tests {
             animation: ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Text {
                 content: "THE WEDDING TIMES • Chloé & José".to_string(),
                 font_family: FontFamily::DisplaySerif,
@@ -4912,6 +4953,8 @@ mod tests {
             animation: ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Image {
                 source_name: "photo.png".to_string(),
                 width_px: 400,
@@ -4941,6 +4984,8 @@ mod tests {
             animation: ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Text {
                 content: "Initial".to_string(),
                 font_family: FontFamily::Sans,
@@ -5168,6 +5213,8 @@ mod tests {
             animation: ElementAnimation::None,
             group_id: None,
             text_format: Default::default(),
+            style_id: None,
+            binding: None,
             kind: ElementKind::Shape {
                 shape_type: ShapeType::Rectangle,
                 fill: FillStyle::Solid(rgb(0, 196, 204)),

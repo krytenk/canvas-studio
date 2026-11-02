@@ -68,7 +68,8 @@ pub fn save(
         return Err("Use a template name of 1–160 characters".into());
     }
     // Production masters must be exportable; ordinary project saves remain unrestricted.
-    let preview = render_project_page_at_dpi(project, 0, 96, false)?;
+    let proof = crate::production::resolve(project, false)?;
+    let preview = render_project_page_at_dpi(&proof, 0, 96, false)?;
     let entry = TemplateEntry {
         schema_version: 1,
         id: generate_document_id(),
@@ -83,7 +84,7 @@ pub fn save(
         format: project.format.label().into(),
         page_count: project.pages.len(),
     };
-    let report = crate::model::pdf_export::run_export_preflight(project, 96);
+    let report = crate::model::pdf_export::run_export_preflight(&proof, 96);
     if report.has_errors() {
         return Err(report
             .issues

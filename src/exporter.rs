@@ -33,6 +33,7 @@ pub fn export_page_to_svg(
     project.width_mm = width / 96. * 25.4;
     project.height_mm = height / 96. * 25.4;
     project.pages = vec![page.clone()];
+    project.production.resolved = true;
     for element in &page.elements {
         if let ElementKind::Text { font_family, .. } = &element.kind {
             for family in std::iter::once(*font_family).chain(
@@ -73,6 +74,20 @@ pub fn export_page_to_svg(
         return Err(errors.join("; "));
     }
     Ok(render_page_svg(page, width, height, transparent_bg))
+}
+
+pub fn export_project_page_to_svg(
+    project: &Project,
+    index: usize,
+    transparent: bool,
+) -> Result<String, String> {
+    let resolved = crate::production::resolve(project, true)?;
+    crate::imported_fonts::register_project(&resolved)?;
+    let page = resolved
+        .pages
+        .get(index)
+        .ok_or("Page is outside document")?;
+    export_page_to_svg(page, resolved.width, resolved.height, transparent)
 }
 
 fn render_page_svg(page: &CanvasPage, width: f32, height: f32, transparent_bg: bool) -> String {
@@ -695,6 +710,8 @@ pub fn render_project_page_at_dpi(
     dpi: u32,
     transparent_bg: bool,
 ) -> Result<RgbaImage, String> {
+    let resolved = crate::production::resolve(project, true)?;
+    let project = resolved.as_ref();
     let page = project
         .pages
         .get(page_idx)
@@ -1388,6 +1405,8 @@ fn xml_escape(s: &str) -> String {
 
 /// Exports the entire multi-page `Project` as an interactive standalone HTML5 Presentation deck.
 pub fn export_project_to_html_deck(project: &Project) -> Result<String, String> {
+    let resolved = crate::production::resolve(project, true)?;
+    let project = resolved.as_ref();
     if project.pages.is_empty() {
         return Err("Project contains no pages to export".into());
     }

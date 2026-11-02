@@ -108,6 +108,8 @@ fn make_shape(
         animation: ElementAnimation::Rise,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind: ElementKind::Shape {
             shape_type,
             fill,
@@ -151,6 +153,8 @@ fn make_text(
         animation: ElementAnimation::Fade,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind: ElementKind::Text {
             content: content.to_string(),
             font_family,
@@ -203,6 +207,7 @@ fn new_template_project(title: &str, format: DesignFormat) -> Project {
         brand_kit: Default::default(),
         imported_fonts: Vec::new(),
         print_settings: Default::default(),
+        production: Default::default(),
         next_id: 500,
     }
 }
@@ -404,6 +409,8 @@ fn build_pitch_deck_template() -> Project {
         animation: ElementAnimation::Rise,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind: ElementKind::Chart {
             chart_type: ChartType::VerticalBar,
             title: "Design Assets Shipped (Thousands)".to_string(),
@@ -876,6 +883,8 @@ fn build_infographic_template() -> Project {
         animation: ElementAnimation::Pop,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind: ElementKind::Chart {
             chart_type: ChartType::Donut,
             title: "Workflow Time Saved by Feature".to_string(),
@@ -915,6 +924,8 @@ fn build_infographic_template() -> Project {
         animation: ElementAnimation::Rise,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind: ElementKind::Table {
             rows: 4,
             cols: 3,
@@ -1236,6 +1247,8 @@ pub fn make_stock_image_element(
         animation: ElementAnimation::Fade,
         group_id: None,
         text_format: Default::default(),
+        style_id: None,
+        binding: None,
         kind: ElementKind::Image {
             source_name: asset.name.to_string(),
             width_px: asset.width,

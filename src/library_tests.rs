@@ -172,7 +172,12 @@ fn print_panels_render_without_dirtying_the_document() {
     app.canvas_state.selected_ids = vec![id];
     let before = app.project.clone();
     let ctx = Context::default();
-    for dock in [DockTab::Text, DockTab::Layers, DockTab::Templates] {
+    for dock in [
+        DockTab::Text,
+        DockTab::Layers,
+        DockTab::Templates,
+        DockTab::Production,
+    ] {
         app.active_dock = dock;
         for _ in 0..3 {
             let _ = ctx.run(

@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.5.0**, with corrected template exports, group editing,
+Current development: **1.6.0**, with corrected template exports, group editing,
 a personal template library and print typography/position controls.
 See [changes](CHANGELOG.md) and the [print-first roadmap](docs/ROADMAP.md).
 
@@ -164,3 +164,20 @@ have a 512 MB unpacked limit and verify their contained images when loading.
 Open **Design Templates → Print guides & safe area** for safe margins and custom
 guides in millimetres. Guide overlays do not appear in exports. Named output
 presets in Export remember DPI, bleed, crop marks and transparency with the design.
+
+### Collections and CSV production
+
+Open **Production** to define field keys and values. Use `{{guest_name}}` within
+text, or bind a selected text/photo frame. Required values are checked before
+delivery. Choose a photo once to update every frame bound to that field.
+
+Save a shared style from selected text, then link other frames to that key.
+Replacing the shared style updates linked frames in preview and output; the
+frame retains its own editable source and character emphasis.
+
+CSV headers must exactly match defined field keys. Quoted commas, multiline
+values and Unicode are supported; photo values refer to local files relative
+to the CSV or absolute paths. Batch production runs in the background and writes
+a new folder with PDF/proof files and `report.json`. Missing required values,
+unsupported content and text overflow fail the affected record. No master is
+overwritten. Enable editable copies if native `.canvas` files are also needed.
