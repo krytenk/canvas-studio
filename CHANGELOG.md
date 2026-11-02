@@ -1,5 +1,13 @@
 # Changes
 
+## 1.7.0 — book production
+
+- Added Book controls for thumbnail page organisation, independent duplication, reordering, facing-page margins, headers, footers, folios and front-matter numbering.
+- Added reusable master artwork with explicit edit/save/cancel and per-page inheritance, including true blank backs. Master images/fonts are included in portable saves and validation.
+- Batch-import images as artwork pages in the background, with contain/cover placement and margin refitting. Concurrent edits preserve the completed import as a separate portable project.
+- Image buffers and embedded field photos now share immutable storage; pixel editing detaches the edited copy. Existing document encodings remain compatible.
+- 57 release checks passed, including a synthetic 50-page workbook, independent PDF rendering, range export, fresh-process master assets and copy-on-write pixel independence.
+
 ## 1.6.0 — linked collections and CSV production
 
 - Added collection text/photo fields and named shared typography styles. Preview and PDF/PNG/SVG/HTML resolve them without changing the editable master.

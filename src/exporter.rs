@@ -1478,8 +1478,17 @@ impl Drop for ActivePackageDirGuard {
 
 fn validate_and_stage_project_assets(project: &Project, parent_dir: &Path) -> Result<(), String> {
     let store = AssetStore::global();
-    for (page_idx, page) in project.pages.iter().enumerate() {
-        for el in &page.elements {
+    for (page_idx, (page_title, elements)) in project
+        .pages
+        .iter()
+        .map(|p| (p.title.as_str(), p.elements.as_slice()))
+        .chain(std::iter::once((
+            "Book master",
+            project.production.book.master_elements.as_slice(),
+        )))
+        .enumerate()
+    {
+        for el in elements {
             if let ElementKind::Image {
                 width_px,
                 height_px,
@@ -1494,7 +1503,7 @@ fn validate_and_stage_project_assets(project: &Project, parent_dir: &Path) -> Re
                     return Err(format!(
                         "Page {} ('{}') image element '{}' (id {}) has invalid dimensions {}x{}",
                         page_idx + 1,
-                        page.title,
+                        page_title,
                         el.name,
                         el.id,
                         width_px,
@@ -1505,7 +1514,7 @@ fn validate_and_stage_project_assets(project: &Project, parent_dir: &Path) -> Re
                     return Err(format!(
                         "Page {} ('{}') image element '{}' (id {}, asset '{}') has {} RGBA bytes, expected {} ({}x{}x4)",
                         page_idx + 1,
-                        page.title,
+                        page_title,
                         el.name,
                         el.id,
                         "raw RGBA",
@@ -1515,12 +1524,12 @@ fn validate_and_stage_project_assets(project: &Project, parent_dir: &Path) -> Re
                         height_px
                     ));
                 }
-                let stored = store.register_rgba(raw_rgba, *width_px, *height_px);
+                let stored = store.register_shared(raw_rgba, *width_px, *height_px);
                 store.write_asset_to_dir(&stored, parent_dir).map_err(|e| {
                     format!(
                         "Page {} ('{}') image element '{}' (id {}, asset '{}') failed to persist: {e}",
                         page_idx + 1,
-                        page.title,
+                        page_title,
                         el.name,
                         el.id,
                         stored.asset_id
@@ -1533,8 +1542,17 @@ fn validate_and_stage_project_assets(project: &Project, parent_dir: &Path) -> Re
 }
 
 fn validate_loaded_project_assets(project: &Project, source_path: &Path) -> Result<(), String> {
-    for (page_idx, page) in project.pages.iter().enumerate() {
-        for el in &page.elements {
+    for (page_idx, (page_title, elements)) in project
+        .pages
+        .iter()
+        .map(|p| (p.title.as_str(), p.elements.as_slice()))
+        .chain(std::iter::once((
+            "Book master",
+            project.production.book.master_elements.as_slice(),
+        )))
+        .enumerate()
+    {
+        for el in elements {
             if let ElementKind::Image {
                 width_px,
                 height_px,
@@ -1552,7 +1570,7 @@ fn validate_loaded_project_assets(project: &Project, source_path: &Path) -> Resu
                         width_px,
                         height_px,
                         page_idx + 1,
-                        page.title,
+                        page_title,
                         el.name,
                         el.id
                     ));
@@ -1565,7 +1583,7 @@ fn validate_loaded_project_assets(project: &Project, source_path: &Path) -> Resu
                         el.id,
                         "raw RGBA",
                         page_idx + 1,
-                        page.title,
+                        page_title,
                         raw_rgba.len(),
                         expected_len,
                         width_px,

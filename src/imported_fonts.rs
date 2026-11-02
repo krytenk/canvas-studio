@@ -103,7 +103,12 @@ pub fn register_project(project: &Project) -> Result<(), String> {
     for font in &project.imported_fonts {
         registry.register_imported(font)?;
     }
-    for element in project.pages.iter().flat_map(|p| &p.elements) {
+    for element in project
+        .pages
+        .iter()
+        .flat_map(|p| &p.elements)
+        .chain(&project.production.book.master_elements)
+    {
         if let ElementKind::Text {
             font_family,
             content,

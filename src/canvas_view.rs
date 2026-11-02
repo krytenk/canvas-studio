@@ -295,6 +295,18 @@ pub fn render_interactive_canvas(
                 Stroke::new(1.0_f32, Color32::LIGHT_RED),
             );
         }
+        if project.production.book.enabled {
+            if let Ok(content) = crate::book_production::content_rect(project, current_page_idx) {
+                painter.rect_stroke(
+                    Rect::from_min_max(
+                        to_screen(content.min.x, content.min.y),
+                        to_screen(content.max.x, content.max.y),
+                    ),
+                    0.,
+                    Stroke::new(1.0_f32, Color32::from_rgb(170, 110, 220)),
+                );
+            }
+        }
         let stroke = Stroke::new(1.0_f32, Color32::from_rgb(230, 180, 60));
         for value in &settings.guides_x_mm {
             let x = to_screen(value * mm_x, 0.).x;

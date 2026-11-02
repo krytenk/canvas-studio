@@ -8,6 +8,46 @@ use serde::{
     Deserializer, Serializer,
 };
 
+/// Cheap immutable image copies; editing one copy detaches its pixels.
+#[derive(Clone, Default, PartialEq)]
+pub struct SharedPixels(Arc<Vec<u8>>);
+impl std::fmt::Debug for SharedPixels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SharedPixels").field(&self.len()).finish()
+    }
+}
+impl std::ops::Deref for SharedPixels {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for SharedPixels {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.0)
+    }
+}
+impl From<Vec<u8>> for SharedPixels {
+    fn from(v: Vec<u8>) -> Self {
+        Self(Arc::new(v))
+    }
+}
+impl From<Arc<Vec<u8>>> for SharedPixels {
+    fn from(v: Arc<Vec<u8>>) -> Self {
+        Self(v)
+    }
+}
+impl FromIterator<u8> for SharedPixels {
+    fn from_iter<T: IntoIterator<Item = u8>>(v: T) -> Self {
+        Vec::from_iter(v).into()
+    }
+}
+impl PartialEq<Vec<u8>> for SharedPixels {
+    fn eq(&self, v: &Vec<u8>) -> bool {
+        self.as_slice() == v.as_slice()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct StoredAsset {
     pub asset_id: String,
@@ -120,6 +160,16 @@ impl AssetStore {
 
     /// Registers a raw RGBA buffer into the content-addressed store, encoding it as PNG.
     pub fn register_rgba(&self, raw_rgba: &[u8], width_px: u32, height_px: u32) -> StoredAsset {
+        self.register_shared(&raw_rgba.to_vec().into(), width_px, height_px)
+    }
+
+    pub fn register_shared(
+        &self,
+        pixels: &SharedPixels,
+        width_px: u32,
+        height_px: u32,
+    ) -> StoredAsset {
+        let raw_rgba: &[u8] = pixels;
         let asset_id = Self::compute_hash(raw_rgba);
         let has_exact_dims = width_px > 0
             && height_px > 0
@@ -154,7 +204,7 @@ impl AssetStore {
             width_px: w,
             height_px: h,
             compressed_bytes: Arc::new(png_bytes),
-            decoded_rgba: Arc::new(raw_rgba.to_vec()),
+            decoded_rgba: pixels.0.clone(),
             original_path: None,
         };
 
@@ -339,7 +389,7 @@ impl AssetStore {
 pub mod serde_rgba_asset {
     use super::*;
 
-    pub fn serialize<S>(raw_rgba: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(raw_rgba: &SharedPixels, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -349,7 +399,7 @@ pub mod serde_rgba_asset {
             ));
         }
         let store = AssetStore::global();
-        let asset = store.register_rgba(raw_rgba, 0, 0);
+        let asset = store.register_shared(raw_rgba, 0, 0);
 
         if let Some(pkg_dir) = store.active_package_dir() {
             let path = pkg_dir
@@ -367,21 +417,21 @@ pub mod serde_rgba_asset {
         // If serialized in-memory without an active package directory (e.g. serde_json::to_value),
         // emit the compact deterministic asset URI; for tiny synthetic buffers (<= 64 bytes), append base64.
         if raw_rgba.len() <= 64 {
-            let b64 = BASE64_STD.encode(raw_rgba);
+            let b64 = BASE64_STD.encode(raw_rgba.as_slice());
             serializer.serialize_str(&format!("asset://{}:raw:{}", asset.asset_id, b64))
         } else {
             serializer.serialize_str(&format!("asset://{}", asset.asset_id))
         }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SharedPixels, D::Error>
     where
         D: Deserializer<'de>,
     {
         struct RgbaAssetVisitor;
 
         impl<'de> Visitor<'de> for RgbaAssetVisitor {
-            type Value = Vec<u8>;
+            type Value = SharedPixels;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("an asset:// reference string or a legacy v1 byte array")
@@ -410,11 +460,11 @@ pub mod serde_rgba_asset {
                         let asset = store
                             .load_asset_from_dir_strict(asset_id, &pkg_dir)
                             .map_err(de::Error::custom)?;
-                        return Ok((*asset.decoded_rgba).clone());
+                        return Ok(asset.decoded_rgba.into());
                     }
 
                     if let Some(asset) = store.get(asset_id) {
-                        return Ok((*asset.decoded_rgba).clone());
+                        return Ok(asset.decoded_rgba.into());
                     }
                     if parts.len() >= 3 && parts[1] == "raw" {
                         let bytes = BASE64_STD.decode(parts[2]).map_err(|e| {
@@ -427,7 +477,7 @@ pub mod serde_rgba_asset {
                                 "Inline raw asset '{asset_id}' decoded to 0 bytes"
                             )));
                         }
-                        return Ok(bytes);
+                        return Ok(bytes.into());
                     }
                     return Err(de::Error::custom(format!(
                         "Required image asset '{asset_id}' is missing from asset store"
@@ -438,7 +488,7 @@ pub mod serde_rgba_asset {
                 if decoded.is_empty() {
                     return Err(de::Error::custom("Decoded base64 image asset is empty"));
                 }
-                Ok(decoded)
+                Ok(decoded.into())
             }
 
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
@@ -455,7 +505,7 @@ pub mod serde_rgba_asset {
                     ));
                 }
                 let _ = AssetStore::global().register_rgba(&bytes, 0, 0);
-                Ok(bytes)
+                Ok(bytes.into())
             }
         }
 

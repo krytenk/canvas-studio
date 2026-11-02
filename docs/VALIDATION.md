@@ -1,5 +1,20 @@
 # Canvas Studio validation
 
+## 1.7.0 local validation
+
+57 release checks pass. A synthetic 50-page workbook with 512×640 artwork was
+imported, reordered/undone, numbered, saved/reopened as a portable project and
+exported as a full PDF and a page-range PDF. Poppler confirmed page count/text;
+the first two independently rendered pages were visually reviewed. Blank backs,
+front matter, master edit/cancel, image-only master persistence in a fresh process,
+damaged master assets and concurrent-import preservation are covered.
+
+The isolated workbook check took 2.00 seconds and peaked at 159,236 KiB RSS
+on this machine (50 synthetic 512×640 images, 96-DPI PDF settings).
+Pixel-copy tests verify shared storage and independent edits. The low-resolution
+fixture is a layout/production check, not a full-resolution commercial-book stress
+test. Native desktop operation and physical printing remain open.
+
 ## 1.6.0 local validation
 
 51 release checks include collection-wide field/style updates with master preservation,

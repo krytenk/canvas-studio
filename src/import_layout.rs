@@ -256,6 +256,7 @@ pub fn convert_layout_collection_to_project(
             id: (page_idx as u64) + 1,
             title: layout_page.title.clone(),
             notes: format!("Imported from layout collection '{}'", collection.name),
+            master_enabled: true,
             background: PageBackground::Solid(bg),
             transition: PageTransition::None,
             elements,
@@ -516,7 +517,7 @@ fn convert_layout_op(id: u64, op_idx: usize, op: &LayoutOp) -> Result<CanvasElem
                     source_name: file_name,
                     width_px: stored.width_px,
                     height_px: stored.height_px,
-                    raw_rgba: (*stored.decoded_rgba).clone(),
+                    raw_rgba: stored.decoded_rgba.into(),
                     mask: ImageMask::None,
                     adjustments,
                     border_color: rgba(0, 0, 0, 0),
@@ -644,7 +645,7 @@ pub fn replace_element_image_from_path(
         *source_name = file_name.clone();
         *width_px = stored.width_px;
         *height_px = stored.height_px;
-        *raw_rgba = (*stored.decoded_rgba).clone();
+        *raw_rgba = stored.decoded_rgba.into();
         *revision = revision.wrapping_add(1);
         element.name = file_name;
         Ok(())

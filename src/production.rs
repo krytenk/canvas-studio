@@ -1,15 +1,50 @@
 use crate::model::*;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::{borrow::Cow, collections::BTreeMap, path::Path};
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DataField {
     pub value: String,
     pub required: bool,
     pub image: bool,
-    pub image_png: Option<String>,
+    #[serde(with = "photo_bytes")]
+    pub image_png: Option<Arc<String>>,
+}
+
+impl std::fmt::Debug for DataField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataField")
+            .field("value", &self.value)
+            .field("required", &self.required)
+            .field("photo_bytes", &self.image_png.as_ref().map(|v| v.len()))
+            .finish()
+    }
+}
+mod photo_bytes {
+    use super::*;
+    pub fn serialize<S: serde::Serializer>(
+        value: &Option<Arc<String>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(v) => serializer.serialize_some(v.as_str()),
+            None => serializer.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Arc<String>>, D::Error> {
+        let value = Option::<String>::deserialize(deserializer)?;
+        if value.as_ref().is_some_and(|v| v.len() > 34_000_000) {
+            return Err(serde::de::Error::custom(
+                "Embedded photo exceeds size limit",
+            ));
+        }
+        Ok(value.map(Arc::new))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -32,11 +67,12 @@ pub struct ProductionSettings {
     pub resolved: bool,
     pub fields: BTreeMap<String, DataField>,
     pub styles: BTreeMap<String, SharedStyle>,
+    pub book: crate::book_production::BookSettings,
 }
 
 impl ProductionSettings {
     pub fn active(&self) -> bool {
-        !self.fields.is_empty() || !self.styles.is_empty()
+        !self.fields.is_empty() || !self.styles.is_empty() || self.book.enabled
     }
 }
 
@@ -103,7 +139,9 @@ pub fn attach_image(field: &mut DataField, path: &Path) -> Result<(), String> {
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    field.image_png = Some(base64::engine::general_purpose::STANDARD.encode(png));
+    field.image_png = Some(Arc::new(
+        base64::engine::general_purpose::STANDARD.encode(png),
+    ));
     Ok(())
 }
 
@@ -111,6 +149,9 @@ fn resolve_element(
     element: &mut CanvasElement,
     settings: &ProductionSettings,
     strict: bool,
+    page_number: &str,
+    page_count: &str,
+    page_title: &str,
 ) -> Result<(), String> {
     if let Some(key) = &element.style_id {
         if let Some(style) = settings.styles.get(key) {
@@ -162,19 +203,27 @@ fn resolve_element(
             };
             let end = start + 2 + close + 2;
             let key = source[start + 2..end - 2].trim();
-            let value = match settings.fields.get(key) {
-                Some(field)
-                    if !field.image && (!field.required || !field.value.trim().is_empty()) =>
-                {
-                    field.value.clone()
+            let value = if key == "page" {
+                page_number.into()
+            } else if key == "pages" {
+                page_count.into()
+            } else if key == "page_title" {
+                page_title.into()
+            } else {
+                match settings.fields.get(key) {
+                    Some(field)
+                        if !field.image && (!field.required || !field.value.trim().is_empty()) =>
+                    {
+                        field.value.clone()
+                    }
+                    Some(_) if strict => {
+                        return Err(format!(
+                            "Required text field '{key}' is empty or is a photo"
+                        ))
+                    }
+                    None if strict => return Err(format!("Unknown text field '{key}'")),
+                    _ => format!("«{key}»"),
                 }
-                Some(_) if strict => {
-                    return Err(format!(
-                        "Required text field '{key}' is empty or is a photo"
-                    ))
-                }
-                None if strict => return Err(format!("Unknown text field '{key}'")),
-                _ => format!("«{key}»"),
             };
             edits.push((start, end, value));
             cursor = end;
@@ -197,7 +246,7 @@ fn resolve_element(
                 return Err("Embedded field photo exceeds supported size".into());
             }
             let data = base64::engine::general_purpose::STANDARD
-                .decode(encoded)
+                .decode(encoded.as_str())
                 .map_err(|e| e.to_string())?;
             let reader = image::ImageReader::new(std::io::Cursor::new(&data))
                 .with_guessed_format()
@@ -220,7 +269,7 @@ fn resolve_element(
             {
                 *width_px = photo.width();
                 *height_px = photo.height();
-                *raw_rgba = photo.into_raw();
+                *raw_rgba = photo.into_raw().into();
                 *source_name = value.clone();
                 *revision = crate::model::asset_store::AssetStore::compute_hash(raw_rgba)
                     .bytes()
@@ -249,9 +298,20 @@ pub fn resolve_page(
     if !project.production.active() {
         return Ok(Cow::Borrowed(page));
     }
-    let mut page = page.clone();
+    let mut page = crate::book_production::compose_page(project, index)?;
+    let number = crate::book_production::page_number(project, index)?
+        .map(|n| n.to_string())
+        .unwrap_or_default();
+    let count = project.pages.len().to_string();
     for element in &mut page.elements {
-        resolve_element(element, &project.production, strict)?;
+        resolve_element(
+            element,
+            &project.production,
+            strict,
+            &number,
+            &count,
+            &page.title,
+        )?;
     }
     Ok(Cow::Owned(page))
 }
@@ -294,6 +354,7 @@ pub fn resolve(project: &Project, strict: bool) -> Result<Cow<'_, Project>, Stri
         }
     }
     let mut resolved = project.clone();
+    resolved.pages.clear();
     resolved.pages = (0..project.pages.len())
         .map(|i| resolve_page(project, i, strict).map(Cow::into_owned))
         .collect::<Result<_, _>>()?;
@@ -302,4 +363,10 @@ pub fn resolve(project: &Project, strict: bool) -> Result<Cow<'_, Project>, Stri
         ..Default::default()
     };
     Ok(Cow::Owned(resolved))
+}
+
+pub fn fingerprint(project: &Project) -> Result<String, String> {
+    serde_json::to_vec(project)
+        .map(|bytes| crate::model::asset_store::AssetStore::compute_hash(&bytes))
+        .map_err(|e| e.to_string())
 }

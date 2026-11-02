@@ -1,4 +1,8 @@
 mod batch_production;
+mod book_production;
+#[cfg(test)]
+mod book_tests;
+mod book_ui;
 mod canvas_view;
 mod document_ops;
 mod exporter;
@@ -30,9 +34,10 @@ use eframe::egui::{
 };
 
 use crate::canvas_view::{render_interactive_canvas, CanvasAction, CanvasInteractionState};
+#[cfg(test)]
+use crate::exporter::export_page_to_svg;
 use crate::exporter::{
-    export_page_to_svg, export_project_to_html_deck, load_project_json, render_project_page_at_dpi,
-    save_project_json,
+    export_project_to_html_deck, load_project_json, render_project_page_at_dpi, save_project_json,
 };
 use crate::magic_studio::{
     extract_magic_layers_from_image, magic_erase_patch, magic_resize_project, magic_write_generate,
@@ -71,6 +76,7 @@ enum DockTab {
     Draw,
     Layers,
     Production,
+    Book,
     AppInfo,
 }
 
@@ -87,6 +93,7 @@ impl DockTab {
             DockTab::Draw,
             DockTab::Layers,
             DockTab::Production,
+            DockTab::Book,
             DockTab::AppInfo,
         ]
     }
@@ -103,6 +110,7 @@ impl DockTab {
             DockTab::Draw => ("✏", "Draw"),
             DockTab::Layers => ("☰", "Layers"),
             DockTab::Production => ("▤", "Production"),
+            DockTab::Book => ("▥", "Book"),
             DockTab::AppInfo => ("ⓘ", "About"),
         }
     }
@@ -168,7 +176,11 @@ struct CanvasStudioApp {
     shared_style_name: String,
     batch_editable: bool,
     production_job:
-        Option<std::sync::mpsc::Receiver<Result<crate::batch_production::BatchReport, String>>>,
+        Option<std::sync::mpsc::Receiver<Result<crate::production_ui::ProductionOutcome, String>>>,
+    completed_artwork: Option<Project>,
+    master_edit_session: Option<crate::book_ui::MasterEditSession>,
+    book_page_offset: usize,
+    book_preview_cache: std::collections::HashMap<(String, u64, u64), egui::TextureHandle>,
     output_preset_name: String,
     new_guide_mm: f32,
     inspector_unit: u8,
@@ -239,6 +251,10 @@ impl CanvasStudioApp {
             shared_style_name: String::new(),
             batch_editable: false,
             production_job: None,
+            completed_artwork: None,
+            master_edit_session: None,
+            book_page_offset: 0,
+            book_preview_cache: Default::default(),
             output_preset_name: "Print output".into(),
             new_guide_mm: 10.,
             inspector_unit: 0,
@@ -506,6 +522,7 @@ impl CanvasStudioApp {
         if pending.project.pages.is_empty() {
             pending.project.pages.push(CanvasPage::new(1, "Page 1"));
         }
+        self.master_edit_session = None;
         self.history.clear();
         self.canvas_state.reset_for_document();
         self.selected_id = None;
@@ -664,6 +681,10 @@ impl CanvasStudioApp {
     }
 
     fn perform_undo(&mut self) -> bool {
+        if self.master_edit_session.is_some() {
+            self.status_banner = "Save or cancel the active master edit before undo/redo".into();
+            return false;
+        }
         if self
             .history
             .undo_with_revision(&mut self.project, &mut self.document_revision)
@@ -680,6 +701,10 @@ impl CanvasStudioApp {
     }
 
     fn perform_redo(&mut self) -> bool {
+        if self.master_edit_session.is_some() {
+            self.status_banner = "Save or cancel the active master edit before undo/redo".into();
+            return false;
+        }
         if self
             .history
             .redo_with_revision(&mut self.project, &mut self.document_revision)
@@ -1026,6 +1051,9 @@ impl CanvasStudioApp {
     }
 
     fn write_project_to_path(&mut self, path: &PathBuf) -> SaveOutcome {
+        if self.master_edit_session.is_some() {
+            self.finish_master_edit(true);
+        }
         match save_project_json(&self.project, path) {
             Ok(_) => {
                 self.mutation_recorded_this_frame = true;
@@ -1278,7 +1306,7 @@ impl CanvasStudioApp {
                             source_name: fname.clone(),
                             width_px: w,
                             height_px: h,
-                            raw_rgba: raw,
+                            raw_rgba: raw.into(),
                             mask: ImageMask::None,
                             adjustments: ImageAdjustments::default(),
                             border_color: rgb(255, 255, 255),
@@ -2378,7 +2406,7 @@ impl CanvasStudioApp {
                                                 upscale_image_2x(raw_rgba, *width_px, *height_px);
                                             *width_px = nw;
                                             *height_px = nh;
-                                            *raw_rgba = nbuf;
+                                            *raw_rgba = nbuf.into();
                                             *revision += 1;
                                         }
                                         if ui.button("🧼 Blend Centre Patch").clicked() {
@@ -2540,6 +2568,7 @@ impl CanvasStudioApp {
                     DockTab::Draw => self.render_dock_draw(ui),
                     DockTab::Layers => self.render_dock_layers(ui),
                     DockTab::Production => self.render_production(ui),
+                    DockTab::Book => self.render_book(ui),
                     DockTab::AppInfo => self.render_dock_app_info(ui),
                 });
             });
@@ -3316,7 +3345,7 @@ impl CanvasStudioApp {
                             ui.add_space(6.0);
                             if ui.button("🎨 Create Sampled-Colour Composition").clicked() {
                                 extract_req = Some((
-                                    raw_rgba.clone(),
+                                    raw_rgba.to_vec(),
                                     *width_px,
                                     *height_px,
                                     ex,
@@ -4782,7 +4811,7 @@ mod tests {
                 source_name: "blue.png".to_string(),
                 width_px: 64,
                 height_px: 64,
-                raw_rgba: solid_blue,
+                raw_rgba: solid_blue.into(),
                 mask: ImageMask::Circle,
                 adjustments: ImageAdjustments {
                     fit: ImageFit::Cover,
@@ -4959,7 +4988,7 @@ mod tests {
                 source_name: "photo.png".to_string(),
                 width_px: 400,
                 height_px: 400,
-                raw_rgba: big_rgba,
+                raw_rgba: big_rgba.into(),
                 mask: ImageMask::None,
                 adjustments: ImageAdjustments::default(),
                 border_color: rgb(255, 255, 255),

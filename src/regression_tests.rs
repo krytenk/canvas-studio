@@ -227,7 +227,7 @@ fn cold_process_assets_and_genuine_legacy_migration() {
     legacy.as_object_mut().unwrap().remove("schema_version");
     if let ElementKind::Image { raw_rgba, .. } = photo().kind {
         legacy["pages"][0]["elements"][0]["kind"]["Image"]["raw_rgba"] =
-            serde_json::json!(raw_rgba);
+            serde_json::json!(raw_rgba.as_slice());
     }
     let v1 = dir.join("legacy.json");
     fs::write(&v1, serde_json::to_vec(&legacy).unwrap()).unwrap();

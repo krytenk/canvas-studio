@@ -708,7 +708,7 @@ pub enum ElementKind {
         width_px: u32,
         height_px: u32,
         #[serde(with = "crate::model::asset_store::serde_rgba_asset")]
-        raw_rgba: Vec<u8>,
+        raw_rgba: crate::model::asset_store::SharedPixels,
         mask: ImageMask,
         #[serde(default)]
         adjustments: ImageAdjustments,
@@ -922,11 +922,17 @@ impl CanvasElement {
     }
 }
 
+fn default_master_enabled() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CanvasPage {
     pub id: u64,
     pub title: String,
     pub notes: String,
+    #[serde(default = "default_master_enabled")]
+    pub master_enabled: bool,
     pub background: PageBackground,
     pub transition: PageTransition,
     pub elements: Vec<CanvasElement>,
@@ -938,6 +944,7 @@ impl CanvasPage {
             id,
             title: title.into(),
             notes: String::new(),
+            master_enabled: true,
             background: PageBackground::Solid(rgb(255, 255, 255)),
             transition: PageTransition::None,
             elements: Vec::new(),
@@ -1361,6 +1368,7 @@ impl SnapshotCache {
                 id: page.id,
                 title: page.title.clone(),
                 notes: page.notes.clone(),
+                master_enabled: page.master_enabled,
                 background: page.background.clone(),
                 transition: page.transition,
                 elements: page
@@ -1396,7 +1404,9 @@ impl SnapshotCache {
                                         _ => {
                                             let id =
                                                 crate::model::asset_store::AssetStore::global()
-                                                    .register_rgba(raw_rgba, *width_px, *height_px)
+                                                    .register_shared(
+                                                        raw_rgba, *width_px, *height_px,
+                                                    )
                                                     .asset_id;
                                             self.images.insert(
                                                 el.id,
@@ -1405,7 +1415,7 @@ impl SnapshotCache {
                                             id
                                         }
                                     };
-                                    [DEHYDRATED_MARKER_PREFIX, id.as_bytes()].concat()
+                                    [DEHYDRATED_MARKER_PREFIX, id.as_bytes()].concat().into()
                                 };
                                 ElementKind::Image {
                                     source_name: source_name.clone(),
@@ -1463,7 +1473,7 @@ pub fn hydrate_project_assets(project: &mut Project) {
                         std::str::from_utf8(&raw_rgba[DEHYDRATED_MARKER_PREFIX.len()..])
                     {
                         if let Some(stored) = store.get(asset_id) {
-                            *raw_rgba = (*stored.decoded_rgba).clone();
+                            *raw_rgba = stored.decoded_rgba.into();
                         }
                     }
                 }

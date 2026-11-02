@@ -221,6 +221,7 @@ fn build_pitch_deck_template() -> Project {
         title: "01 • Executive Cover".to_string(),
         notes: "Welcome the audience and highlight the unified visual studio architecture."
             .to_string(),
+        master_enabled: true,
         background: PageBackground::LinearGradient {
             start: rgb(14, 19, 36),
             end: rgb(35, 18, 68),
@@ -365,6 +366,7 @@ fn build_pitch_deck_template() -> Project {
         id: 2,
         title: "02 • Performance & Analytics".to_string(),
         notes: "Demonstrate native chart rendering and structured tables.".to_string(),
+        master_enabled: true,
         background: PageBackground::Solid(rgb(248, 250, 252)),
         transition: PageTransition::Slide,
         elements: Vec::new(),
@@ -497,6 +499,7 @@ fn build_social_launch_template() -> Project {
         id: 1,
         title: "Social Square Post".to_string(),
         notes: String::new(),
+        master_enabled: true,
         background: PageBackground::LinearGradient {
             start: rgb(18, 12, 43),
             end: rgb(74, 20, 140),
@@ -601,6 +604,7 @@ fn build_yt_thumbnail_template() -> Project {
         id: 1,
         title: "Thumbnail Main".to_string(),
         notes: String::new(),
+        master_enabled: true,
         background: PageBackground::LinearGradient {
             start: rgb(15, 23, 42),
             end: rgb(30, 58, 138),
@@ -699,6 +703,7 @@ fn build_poster_template() -> Project {
         id: 1,
         title: "Event Poster".to_string(),
         notes: String::new(),
+        master_enabled: true,
         background: PageBackground::Solid(rgb(250, 243, 235)),
         transition: PageTransition::None,
         elements: Vec::new(),
@@ -775,6 +780,7 @@ fn build_story_template() -> Project {
         id: 1,
         title: "Flash Sale Story".to_string(),
         notes: String::new(),
+        master_enabled: true,
         background: PageBackground::LinearGradient {
             start: rgb(255, 92, 138),
             end: rgb(125, 42, 232),
@@ -845,6 +851,7 @@ fn build_infographic_template() -> Project {
         id: 1,
         title: "Infographic".to_string(),
         notes: String::new(),
+        master_enabled: true,
         background: PageBackground::Solid(rgb(15, 23, 42)),
         transition: PageTransition::None,
         elements: Vec::new(),
@@ -971,6 +978,7 @@ fn build_logo_template() -> Project {
         id: 1,
         title: "Logo Mark".to_string(),
         notes: String::new(),
+        master_enabled: true,
         background: PageBackground::Solid(rgb(15, 23, 42)),
         transition: PageTransition::None,
         elements: Vec::new(),
@@ -1047,7 +1055,7 @@ pub struct SampleStockAsset {
     pub subtitle: &'static str,
     pub width: u32,
     pub height: u32,
-    pub rgba: Vec<u8>,
+    pub rgba: crate::model::asset_store::SharedPixels,
 }
 
 pub fn generate_builtin_stock_assets() -> Vec<SampleStockAsset> {
@@ -1098,7 +1106,7 @@ fn generate_subject_on_studio_backdrop() -> SampleStockAsset {
         subtitle: "Try 'Remove Background' on this studio subject",
         width: w,
         height: h,
-        rgba: buf,
+        rgba: buf.into(),
     }
 }
 
@@ -1147,7 +1155,7 @@ fn generate_sunset_mountain_landscape() -> SampleStockAsset {
         subtitle: "320x200 Scenic Illustration",
         width: w,
         height: h,
-        rgba: buf,
+        rgba: buf.into(),
     }
 }
 
@@ -1180,7 +1188,7 @@ fn generate_neon_cyber_grid() -> SampleStockAsset {
         subtitle: "280x200 Tech Pattern",
         width: w,
         height: h,
-        rgba: buf,
+        rgba: buf.into(),
     }
 }
 
@@ -1214,7 +1222,7 @@ fn generate_botanical_minimal_art() -> SampleStockAsset {
         subtitle: "240x240 Minimalist Art (BG Cutout Ready)",
         width: w,
         height: h,
-        rgba: buf,
+        rgba: buf.into(),
     }
 }
 

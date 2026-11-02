@@ -1,20 +1,51 @@
 use super::*;
 
+pub(crate) enum ProductionOutcome {
+    Csv(crate::batch_production::BatchReport),
+    Artwork {
+        project: Project,
+        source_fingerprint: String,
+    },
+}
+
 impl CanvasStudioApp {
     pub(crate) fn poll_production_job(&mut self) {
         let outcome = self.production_job.as_ref().map(|job| job.try_recv());
         match outcome {
             Some(Ok(result)) => {
                 self.production_job = None;
-                self.status_banner = match result {
-                    Ok(report) => format!(
-                        "Batch finished: {} succeeded, {} need attention. Report: {}",
-                        report.records.iter().filter(|r| r.success).count(),
-                        report.records.iter().filter(|r| !r.success).count(),
-                        report.folder.display()
-                    ),
-                    Err(error) => format!("Batch failed: {error}"),
-                };
+                match result {
+                    Ok(ProductionOutcome::Csv(report)) => {
+                        self.status_banner = format!(
+                            "Batch finished: {} succeeded, {} need attention. Report: {}",
+                            report.records.iter().filter(|r| r.success).count(),
+                            report.records.iter().filter(|r| !r.success).count(),
+                            report.folder.display()
+                        )
+                    }
+                    Ok(ProductionOutcome::Artwork {
+                        mut project,
+                        source_fingerprint,
+                    }) => {
+                        if crate::production::fingerprint(&self.project).ok().as_ref()
+                            == Some(&source_fingerprint)
+                        {
+                            self.record_mutation();
+                            self.project = project;
+                            self.reconcile_selection_and_page();
+                            self.fit_canvas_to_viewport();
+                            self.status_banner =
+                                "Artwork import completed; the editable book is ready to review"
+                                    .into();
+                        } else {
+                            project.document_id = model::generate_document_id();
+                            project.recovery_origin_path = None;
+                            self.completed_artwork = Some(project);
+                            self.status_banner="Artwork import completed separately because the document changed. Save it from the Book panel".into();
+                        }
+                    }
+                    Err(error) => self.status_banner = format!("Production job failed: {error}"),
+                }
             }
             Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
                 self.production_job = None;
@@ -66,7 +97,8 @@ impl CanvasStudioApp {
         );
         if ui.button("Add Field").clicked() {
             let key = self.production_key.trim();
-            if crate::production::valid_key(key) && !matches!(key, "page" | "pages") {
+            if crate::production::valid_key(key) && !matches!(key, "page" | "pages" | "page_title")
+            {
                 self.project.production.fields.entry(key.into()).or_insert(
                     crate::production::DataField {
                         required: true,
@@ -74,7 +106,7 @@ impl CanvasStudioApp {
                     },
                 );
             } else {
-                self.status_banner="Use letters, numbers and underscores for the field key; page/pages are reserved".into();
+                self.status_banner="Use letters, numbers and underscores for the field key; page/pages/page_title are reserved".into();
             }
         }
         let mut bind = None;
@@ -216,9 +248,10 @@ impl CanvasStudioApp {
                     self.status_banner =
                         "CSV production started; you can continue editing the master".into();
                     std::thread::spawn(move || {
-                        let _ = sender.send(crate::batch_production::export_csv(
-                            &master, &csv, &output, editable,
-                        ));
+                        let _ = sender.send(
+                            crate::batch_production::export_csv(&master, &csv, &output, editable)
+                                .map(ProductionOutcome::Csv),
+                        );
                     });
                 }
             }

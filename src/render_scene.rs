@@ -391,7 +391,7 @@ pub enum SceneItem {
         transform: LocalToPageTransform,
         width_px: u32,
         height_px: u32,
-        raw_rgba: Vec<u8>,
+        raw_rgba: crate::model::asset_store::SharedPixels,
         mask: ImageMask,
         adjustments: ImageAdjustments,
         placement: ImagePlacement,
