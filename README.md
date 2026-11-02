@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.4.0**, with corrected template exports, group editing,
+Current development: **1.5.0**, with corrected template exports, group editing,
 a personal template library and print typography/position controls.
 See [changes](CHANGELOG.md) and the [print-first roadmap](docs/ROADMAP.md).
 
@@ -153,3 +153,14 @@ Select a text frame and open **Typography** to set paragraph spacing, indentatio
 and frame insets. Double-click the canvas text and select characters, then apply
 emphasis or an actual font face in the Typography panel. The main toolbar controls
 the frame defaults. **Clear character styles** removes range overrides.
+
+### Portable projects and print settings
+
+Use **Export → Save Editable Portable Copy** to create a single `.canvas` file
+containing the design, images and imported fonts. Open it through the project
+file chooser. JSON plus companion assets remains supported. Portable packages
+have a 512 MB unpacked limit and verify their contained images when loading.
+
+Open **Design Templates → Print guides & safe area** for safe margins and custom
+guides in millimetres. Guide overlays do not appear in exports. Named output
+presets in Export remember DPI, bleed, crop marks and transparency with the design.

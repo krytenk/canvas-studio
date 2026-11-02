@@ -278,6 +278,7 @@ pub fn convert_layout_collection_to_project(
         pages,
         brand_kit: BrandKit::default(),
         imported_fonts: Vec::new(),
+        print_settings: Default::default(),
         next_id,
     })
 }

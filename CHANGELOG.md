@@ -1,5 +1,12 @@
 # Changes
 
+## 1.5.0 — print guides, output presets and portable projects
+
+- Added compressed, versioned `.canvas` projects containing the editable design, image assets and imported fonts. Open them through the ordinary project dialog; save a portable copy from Export. Checked loading rejects damaged archives, unsafe asset names and oversized contents.
+- Added persistent safe-area and bleed overlays, editable millimetre guides and snapping to custom guides. Editing guides are excluded from exported artwork; preflight identifies text entering the safety margin.
+- Added named output presets stored with the document/template, including DPI, bleed, crop marks and transparency. Export controls scroll on smaller screens.
+- Added cold-process portable-file, moved-resource, failed-save preservation, damaged-package and print-guide coverage.
+
 ## 1.4.0 — paragraph layout and character emphasis
 
 - Added before/after paragraph spacing, first-line indentation and four text-frame insets in points.

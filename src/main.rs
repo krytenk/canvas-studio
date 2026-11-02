@@ -7,6 +7,9 @@ mod library_tests;
 mod magic_studio;
 mod model;
 mod paragraph_layout;
+#[cfg(test)]
+mod print_studio_tests;
+mod project_package;
 mod template_library;
 mod templates;
 #[cfg(test)]
@@ -153,6 +156,8 @@ struct CanvasStudioApp {
     library_name: String,
     library_tags: String,
     library_previews: std::collections::HashMap<String, egui::TextureHandle>,
+    output_preset_name: String,
+    new_guide_mm: f32,
     inspector_unit: u8,
     inspector_aspect_lock: bool,
     show_notes_drawer: bool,
@@ -217,6 +222,8 @@ impl CanvasStudioApp {
             library_name: String::new(),
             library_tags: String::new(),
             library_previews: Default::default(),
+            output_preset_name: "Print output".into(),
+            new_guide_mm: 10.,
             inspector_unit: 0,
             inspector_aspect_lock: true,
             show_notes_drawer: false,
@@ -1594,7 +1601,7 @@ impl CanvasStudioApp {
                         }
                         if ui.button("📂 Open").clicked() {
                             if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("Canvas Project", &["json"])
+                                .add_filter("Canvas Project", &["json","canvas"])
                                 .pick_file()
                             {
                                 match load_project_json(&path) {
@@ -1740,6 +1747,7 @@ impl CanvasStudioApp {
                                         pages: vec![CanvasPage::new(1, "Page 1")],
                                         brand_kit: Default::default(),
                                         imported_fonts: Vec::new(),
+                                        print_settings: Default::default(),
                                         next_id: 100,
                                     };
                                     let msg = format!("Created new {} project", fmt.label());
@@ -2515,6 +2523,97 @@ impl CanvasStudioApp {
             });
     }
 
+    fn render_print_guides(&mut self, ui: &mut Ui) {
+        ui.collapsing("Print guides & safe area", |ui| {
+            ui.checkbox(
+                &mut self.project.print_settings.show_guides,
+                "Show guides on canvas",
+            );
+            ui.horizontal(|ui| {
+                ui.label("Safe margin mm");
+                ui.add(
+                    egui::DragValue::new(&mut self.project.print_settings.safe_margin_mm)
+                        .range(0.0..=50.0)
+                        .speed(0.5),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::DragValue::new(&mut self.new_guide_mm)
+                        .range(0.0..=1270.0)
+                        .prefix("mm "),
+                );
+                if ui.button("+ Vertical").clicked() {
+                    self.project
+                        .print_settings
+                        .guides_x_mm
+                        .push(self.new_guide_mm);
+                }
+                if ui.button("+ Horizontal").clicked() {
+                    self.project
+                        .print_settings
+                        .guides_y_mm
+                        .push(self.new_guide_mm);
+                }
+            });
+            for (label, guides) in [
+                ("Vertical", &mut self.project.print_settings.guides_x_mm),
+                ("Horizontal", &mut self.project.print_settings.guides_y_mm),
+            ] {
+                let mut remove = None;
+                for (index, guide) in guides.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(label);
+                        ui.add(
+                            egui::DragValue::new(guide)
+                                .range(0.0..=1270.0)
+                                .suffix(" mm"),
+                        );
+                        if ui.small_button("Remove").clicked() {
+                            remove = Some(index);
+                        }
+                    });
+                }
+                if let Some(index) = remove {
+                    guides.remove(index);
+                }
+            }
+            ui.label("Guides are editing aids and do not appear in exported artwork.");
+        });
+    }
+
+    fn render_output_presets(&mut self, ui: &mut Ui) {
+        ui.collapsing("Saved output presets", |ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.output_preset_name).hint_text("Preset name"),
+            );
+            if ui.button("Save / Replace Current Settings").clicked() {
+                let preset = crate::model::OutputPreset {
+                    name: self.output_preset_name.trim().into(),
+                    dpi: self.export_dpi,
+                    bleed_mm: self.project.bleed_mm,
+                    crop_marks: self.project.crop_marks,
+                    transparent: self.export_transparent,
+                };
+                if !preset.name.is_empty() {
+                    self.project
+                        .print_settings
+                        .presets
+                        .retain(|p| p.name != preset.name);
+                    self.project.print_settings.presets.push(preset);
+                }
+            }
+            for preset in self.project.print_settings.presets.clone() {
+                if ui.button(&preset.name).clicked() {
+                    self.export_dpi = preset.dpi.clamp(36, 600);
+                    self.project.bleed_mm = preset.bleed_mm.clamp(0., 10.);
+                    self.project.crop_marks = preset.crop_marks;
+                    self.export_transparent = preset.transparent;
+                }
+            }
+        });
+    }
+
     fn render_dock_templates(&mut self, ui: &mut Ui) {
         ui.heading("📐 Design Templates & Print Collections");
         ui.label(
@@ -2542,6 +2641,7 @@ impl CanvasStudioApp {
 
         ui.separator();
         self.render_template_library(ui);
+        self.render_print_guides(ui);
         ui.separator();
         ui.strong("Built-In Studio Templates");
         ui.add_space(6.0);
@@ -4015,6 +4115,7 @@ impl CanvasStudioApp {
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
                 ui.set_min_width(430.0);
+                ScrollArea::vertical().max_height((ctx.screen_rect().height()-120.).max(200.)).show(ui,|ui| {
                 let (w_mm, h_mm) = (
                     self.project.effective_width_mm(),
                     self.project.effective_height_mm(),
@@ -4059,6 +4160,13 @@ impl CanvasStudioApp {
 
                 ui.separator();
 
+                if ui.button("Save Editable Portable Copy (.canvas)").clicked() {
+                    if let Some(path)=rfd::FileDialog::new().set_file_name("design.canvas").add_filter("Portable Canvas Studio project",&["canvas"]).save_file() {
+                        self.status_banner=match project_package::save(&self.project,&path){Ok(())=>format!("Saved portable copy to {}",path.display()),Err(e)=>format!("Portable save failed: {e}")};
+                    }
+                }
+
+                self.render_output_presets(ui);
                 // Export Preflight Check
                 let preflight = run_export_preflight(&self.project, self.export_dpi);
                 if preflight.issues.is_empty() {
@@ -4288,6 +4396,7 @@ impl CanvasStudioApp {
                         };
                     }
                 }
+                });
             });
         self.show_export_modal = open;
     }
@@ -4695,6 +4804,7 @@ mod tests {
             pages: vec![CanvasPage::new(1, "Page 1")],
             brand_kit: Default::default(),
             imported_fonts: Vec::new(),
+            print_settings: Default::default(),
             next_id: 50,
         };
         let (pt_w, pt_h) = proj.pdf_points_dimensions();

@@ -3,7 +3,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::Arc};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ImportedFont {
     pub id: u64,
     pub name: String,
@@ -11,6 +11,16 @@ pub struct ImportedFont {
     pub italic: bool,
     #[serde(with = "font_bytes")]
     pub bytes: Arc<Vec<u8>>,
+}
+
+impl std::fmt::Debug for ImportedFont {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportedFont")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("bytes", &self.bytes.len())
+            .finish()
+    }
 }
 
 mod font_bytes {

@@ -268,6 +268,48 @@ pub fn render_interactive_canvas(
     }
 
     // Top & Left Rulers
+    if project.print_settings.show_guides && !presentation_mode {
+        let settings = &project.print_settings;
+        let mm_x = project.width / project.effective_width_mm();
+        let mm_y = project.height / project.effective_height_mm();
+        let margin = Vec2::new(
+            settings.safe_margin_mm * mm_x * effective_zoom,
+            settings.safe_margin_mm * mm_y * effective_zoom,
+        );
+        if margin.x * 2. < page_rect.width() && margin.y * 2. < page_rect.height() {
+            painter.rect_stroke(
+                Rect::from_min_max(page_rect.min + margin, page_rect.max - margin),
+                0.,
+                Stroke::new(1.0_f32, Color32::from_rgb(40, 170, 220)),
+            );
+        }
+        let bleed = Vec2::new(
+            project.bleed_mm * mm_x * effective_zoom,
+            project.bleed_mm * mm_y * effective_zoom,
+        );
+        if project.bleed_mm > 0. {
+            painter.rect_stroke(
+                Rect::from_min_max(page_rect.min - bleed, page_rect.max + bleed),
+                0.,
+                Stroke::new(1.0_f32, Color32::LIGHT_RED),
+            );
+        }
+        let stroke = Stroke::new(1.0_f32, Color32::from_rgb(230, 180, 60));
+        for value in &settings.guides_x_mm {
+            let x = to_screen(value * mm_x, 0.).x;
+            painter.line_segment(
+                [Pos2::new(x, page_rect.min.y), Pos2::new(x, page_rect.max.y)],
+                stroke,
+            );
+        }
+        for value in &settings.guides_y_mm {
+            let y = to_screen(0., value * mm_y).y;
+            painter.line_segment(
+                [Pos2::new(page_rect.min.x, y), Pos2::new(page_rect.max.x, y)],
+                stroke,
+            );
+        }
+    }
     if state.show_rulers && !presentation_mode {
         paint_rulers(&painter, viewport_rect, page_rect, effective_zoom);
     }
@@ -637,7 +679,7 @@ pub fn render_interactive_canvas(
                 let w = orig.width();
                 let h = orig.height();
 
-                let (final_x, final_y, guides) = if state.snap_enabled {
+                let (mut final_x, mut final_y, mut guides) = if state.snap_enabled {
                     compute_smart_snap(
                         sel_id,
                         proposed_x,
@@ -652,6 +694,40 @@ pub fn render_interactive_canvas(
                 } else {
                     (proposed_x, proposed_y, Vec::new())
                 };
+
+                if state.snap_enabled && project.print_settings.show_guides {
+                    let tolerance = 10. / effective_zoom.max(0.25);
+                    for guide in &project.print_settings.guides_x_mm {
+                        let position = guide * project.width / project.effective_width_mm();
+                        if let Some(anchor) = [0., w / 2., w]
+                            .into_iter()
+                            .find(|anchor| (proposed_x + anchor - position).abs() < tolerance)
+                        {
+                            final_x = position - anchor;
+                            guides.push(SnapGuide {
+                                vertical: true,
+                                position,
+                                label: "Custom guide",
+                            });
+                            break;
+                        }
+                    }
+                    for guide in &project.print_settings.guides_y_mm {
+                        let position = guide * project.height / project.effective_height_mm();
+                        if let Some(anchor) = [0., h / 2., h]
+                            .into_iter()
+                            .find(|anchor| (proposed_y + anchor - position).abs() < tolerance)
+                        {
+                            final_y = position - anchor;
+                            guides.push(SnapGuide {
+                                vertical: false,
+                                position,
+                                label: "Custom guide",
+                            });
+                            break;
+                        }
+                    }
+                }
 
                 let applied_dx = final_x - orig.min.x;
                 let applied_dy = final_y - orig.min.y;

@@ -1043,6 +1043,36 @@ pub const MAX_EXPORT_PIXEL_DIM: u32 = 18_000;
 pub const MAX_EXPORT_TOTAL_PIXELS: u64 = 100_000_000;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OutputPreset {
+    pub name: String,
+    pub dpi: u32,
+    pub bleed_mm: f32,
+    pub crop_marks: bool,
+    pub transparent: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PrintSettings {
+    pub safe_margin_mm: f32,
+    pub show_guides: bool,
+    pub guides_x_mm: Vec<f32>,
+    pub guides_y_mm: Vec<f32>,
+    pub presets: Vec<OutputPreset>,
+}
+impl Default for PrintSettings {
+    fn default() -> Self {
+        Self {
+            safe_margin_mm: 5.,
+            show_guides: true,
+            guides_x_mm: Vec::new(),
+            guides_y_mm: Vec::new(),
+            presets: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
@@ -1068,6 +1098,8 @@ pub struct Project {
     pub brand_kit: BrandKit,
     #[serde(default)]
     pub imported_fonts: Vec<crate::imported_fonts::ImportedFont>,
+    #[serde(default)]
+    pub print_settings: PrintSettings,
     pub next_id: u64,
 }
 
@@ -1092,6 +1124,7 @@ impl Default for Project {
             pages: vec![CanvasPage::new(1, "Page 1")],
             brand_kit: BrandKit::default(),
             imported_fonts: Vec::new(),
+            print_settings: Default::default(),
             next_id: 100,
         }
     }
@@ -1400,6 +1433,7 @@ impl SnapshotCache {
             pages,
             brand_kit: project.brand_kit.clone(),
             imported_fonts: project.imported_fonts.clone(),
+            print_settings: project.print_settings.clone(),
             next_id: project.next_id,
         }
     }

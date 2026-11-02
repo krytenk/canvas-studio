@@ -1,5 +1,14 @@
 # Canvas Studio validation
 
+## 1.5.0 local validation
+
+47 release checks cover the previous workflows plus a moved single-file project
+opened in a fresh process with image assets, imported font bytes, paragraph insets,
+guides and an output preset. PDF text extraction verified the reopened result.
+Failed portable saves preserve the destination; damaged/path-traversing packages
+are rejected. Guides leave raster exports unchanged, and unsafe text is identified
+by preflight. Native desktop and physical-print acceptance remain open.
+
 ## 1.4.0 local validation
 
 43 release tests passed, including styled Unicode wrapping, uppercase expansion,

@@ -1562,6 +1562,12 @@ fn validate_loaded_project_assets(project: &Project, source_path: &Path) -> Resu
 /// Saves a `Project` atomically via a temporary sibling file, deduplicating and verifying all raster
 /// image assets in `<project_dir>/assets/<asset_id>.<ext>` BEFORE committing the `.canvas.json` manifest.
 pub fn save_project_json(project: &Project, path: &Path) -> Result<(), String> {
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("canvas"))
+    {
+        return crate::project_package::save(project, path);
+    }
     let parent_dir = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -1628,6 +1634,9 @@ pub fn save_project_json(project: &Project, path: &Path) -> Result<(), String> {
 /// `"asset://<hash>"` references and legacy v1 raw `[u8, ...]` arrays), strictly verifying
 /// that every required image asset exists and decodes cleanly.
 pub fn load_project_json(path: &Path) -> Result<Project, String> {
+    if crate::project_package::is_package(path) {
+        return crate::project_package::load(path);
+    }
     let parent_dir = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())

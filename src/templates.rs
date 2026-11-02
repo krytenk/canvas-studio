@@ -202,6 +202,7 @@ fn new_template_project(title: &str, format: DesignFormat) -> Project {
         pages: Vec::new(),
         brand_kit: Default::default(),
         imported_fonts: Vec::new(),
+        print_settings: Default::default(),
         next_id: 500,
     }
 }

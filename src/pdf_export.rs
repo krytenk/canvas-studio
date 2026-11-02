@@ -114,6 +114,23 @@ pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightRepo
         });
     }
 
+    let margin = project.print_settings.safe_margin_mm;
+    if !margin.is_finite()
+        || margin < 0.
+        || margin * 2.
+            >= project
+                .effective_width_mm()
+                .min(project.effective_height_mm())
+    {
+        issues.push(PreflightIssue {
+            page_index: 0,
+            element_id: 0,
+            element_name: "Safe area".into(),
+            severity: PreflightSeverity::Error,
+            category: "print_settings",
+            message: "Safe margin must be smaller than half the page and non-negative".into(),
+        });
+    }
     for (page_index, page) in project.pages.iter().enumerate() {
         for element in page.elements.iter().filter(|e| e.visible) {
             let unsupported=match &element.kind {
@@ -139,6 +156,14 @@ pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightRepo
             }
             if element.shadow.enabled {
                 issues.push(PreflightIssue {page_index,element_id:element.id,element_name:element.name.clone(),severity:PreflightSeverity::Error,category:"unsupported_effect",message:"Drop shadows are not supported in production exports; disable the shadow before exporting.".into()});
+            }
+            if matches!(element.kind, ElementKind::Text { .. }) && margin > 0. {
+                let (x0, y0, x1, y1) = LocalToPageTransform::from_element(element).page_aabb(0.);
+                let mx = margin * project.width / project.effective_width_mm();
+                let my = margin * project.height / project.effective_height_mm();
+                if x0 < mx || y0 < my || x1 > project.width - mx || y1 > project.height - my {
+                    issues.push(PreflightIssue {page_index,element_id:element.id,element_name:element.name.clone(),severity:PreflightSeverity::Warning,category:"safe_area",message:"Text frame enters the configured trim safety margin; inspect its content before printing".into()});
+                }
             }
             match &element.kind {
                 ElementKind::Text {
