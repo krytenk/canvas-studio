@@ -22,6 +22,8 @@ sys.path.insert(0,sys.argv[1]);import native_ui as ui
 ui.X.XMoveResizeWindow(ui.d,ui.w,0,0,1280,900);ui.X.XFlush(ui.d);time.sleep(.8)
 ui=importlib.reload(ui);ui.focus();ui.click(32,441);time.sleep(.5);ui.screenshot(sys.argv[2]+'/tools.png')
 ui.chord('Control_L','s');time.sleep(.5)
+ui.X.XMoveResizeWindow(ui.d,ui.w,0,0,1024,680);ui.X.XFlush(ui.d);time.sleep(.5)
+ui=importlib.reload(ui)
 for _ in range(12):ui.click(33,535,5)
 ui.click(32,399);time.sleep(.4);ui.screenshot(sys.argv[2]+'/book.png')
 ''')

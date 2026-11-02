@@ -40,7 +40,7 @@ def run(binary,chrome=None):
   g=c.guard();edit([{'action':'mockup_place','id':book,'job':renders['book']['id'],'page':0}],True);assert c.guard()==g
   # An unrelated document edit is allowed; an edited cover/camera is refused.
   edit([{'action':'title','value':'Product studio · Fieldwork collection'}]);edit([{'action':'mockup_place','id':book,'job':renders['book']['id'],'page':1}])
-  c.call('studio_export',{**c.guard(),'path':'poster-proof.pdf','format':'pdf'})
+  c.call('studio_export',{**c.guard(),'path':'poster-proof.pdf','format':'pdf','overwrite':True})
   edit([{'action':'mockup_update','id':book,'yaw':-35}]);edit([{'action':'mockup_place','id':book,'job':renders['book']['id'],'page':1}],True)
   edit([{'action':'mockup_update','id':book,'yaw':-28}]);edit([{'action':'background','page':0,'color':'#244739'}]);edit([{'action':'mockup_place','id':book,'job':renders['book']['id'],'page':1}],True)
   edit([{'action':'background','page':0,'color':'#173e35'}]);movie=render(book,True);save(movie,'book-reveal.mp4')
@@ -64,7 +64,7 @@ def run(binary,chrome=None):
   p2,l2,con2,_=launch(binary,qa,'cold-'+str(time.time_ns()),restored/'product.canvas');c2=Client(restored,con2)
   try:
    assert c2.call('studio_document')['mockups']==before
-   c2.call('studio_export',{**c2.guard(),'page':1,'path':'poster.png','format':'png','dpi':96})
+   c2.call('studio_export',{**c2.guard(),'page':1,'path':'poster.png','format':'png','dpi':96,'overwrite':True})
    assert Image.open(restored/'poster.png').size==(720,1080)
   finally:c2.close();p2.terminate();p2.wait(timeout=10);l2.close()
   if chrome:

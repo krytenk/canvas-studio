@@ -31,7 +31,7 @@ def run(binary):
   c.call('studio_media_job',{**c.guard(),'id':j['id'],'operation':'source','path':'Book reveal source.zip','overwrite':True});files.append('Book reveal source.zip')
   edit([{'action':'film_setup','width':1200,'height':1200,'fps':30,'duration':180},{'action':'mockup_film','id':scenes[0]['id'],'job':j['id'],'start':0}])
   c.call('studio_export',{**c.guard(),'path':'Product studio demo.canvas','format':'canvas','overwrite':True});files.append('Product studio demo.canvas')
-  c.call('studio_export',{**c.guard(),'path':'Poster print proof.pdf','format':'pdf'});files.append('Poster print proof.pdf')
+  c.call('studio_export',{**c.guard(),'path':'Poster print proof.pdf','format':'pdf','overwrite':True});files.append('Poster print proof.pdf')
   durable=ROOT/'StudioProjects/Product Studio 1.15 Demo';durable.mkdir(parents=True,exist_ok=True)
   for file in files:shutil.copy2(work/file,durable/file)
   (durable/'README.txt').write_text('Canvas Studio 1.15 — original fictional product artwork. No real brand or endorsement.\nOpen Product studio demo.canvas. Browser: Mockups. Native: Tools / Product studio 3D.\nThree editable cover pages, three saved scenes, an independent poster page, and a 6-second book reveal in Film.\nPNG posters and the print proof are snapshots; update artwork then re-render to refresh.\nThe source ZIP contains a separately editable code scene and native master with pinned renderer and Three.js MIT license.\nNo paid API or asset credits used.\n')

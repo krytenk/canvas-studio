@@ -68,6 +68,10 @@ jobs:
             qa/native-mockups/result.txt
             qa/native-mockups/native.log
             qa/mockups/*.png
+            qa/mockups/workspace/book.png
+            qa/mockups/workspace/box.png
+            qa/mockups/workspace/cards.png
+            qa/mockups/workspace/book-reveal.mp4
             qa/mockups/report.json
             qa/motion/motion-ui.png
             qa/motion/report.json
