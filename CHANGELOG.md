@@ -1,5 +1,19 @@
 # Changes
 
+## 1.15.0 — Product studio and desktop repair
+
+- Three.js book, product-box and card-stack scenes with native editable front/back
+  cover textures, camera/proportion/material/light controls and on-demand preview.
+- Cancellable local listing PNGs and deterministic six-second MP4 reveals, with
+  hashed editable source ZIPs, pinned renderer and bundled Three.js MIT license.
+- Native art direction/poster review, checked static poster placement and Film
+  import. Stale scene/cover output cannot be placed; existing snapshots stay explicit.
+- Portable v5 scene metadata, a 14th MCP tool, and regression workflows for cold
+  restore, repeated pixels, out-of-order seeks, cancellation and WebGL fallback.
+- Repair obsolete Camva Linux shortcuts, preserve old launchers, launch from any
+  working directory and log startup failures privately.
+
+
 ## 1.14.0 — editable motion and HyperFrames source delivery
 
 - Added typed per-clip position, scale, rotation and opacity keyframes, cubic/linear/hold easing, presets and browser/native key controls. Splits and trims retain the animation clock; movement moves it with the clip.

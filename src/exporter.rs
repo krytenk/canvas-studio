@@ -1611,7 +1611,10 @@ fn validate_loaded_project_assets(project: &Project, source_path: &Path) -> Resu
 /// Saves a `Project` atomically via a temporary sibling file, deduplicating and verifying all raster
 /// image assets in `<project_dir>/assets/<asset_id>.<ext>` BEFORE committing the `.canvas.json` manifest.
 pub fn save_project_json(project: &Project, path: &Path) -> Result<(), String> {
-    if project.production.studio.active() || project.production.timeline.active() {
+    if project.production.studio.active()
+        || project.production.timeline.active()
+        || !project.production.mockups.is_empty()
+    {
         return crate::project_package::save(project, path);
     }
     save_project_manifest(project, path)
@@ -1638,6 +1641,7 @@ pub(crate) fn save_project_manifest(project: &Project, path: &Path) -> Result<()
 
     crate::campaign::validate(project)?;
     crate::timeline::validate(&project.production.timeline)?;
+    crate::mockups::validate(&project)?;
     crate::imported_fonts::register_project(project)?;
     // 1. Validate and persist all required image assets on disk before touching the manifest.
     validate_and_stage_project_assets(project, &parent_dir)?;
@@ -1709,6 +1713,7 @@ pub fn load_project_json(path: &Path) -> Result<Project, String> {
         .map_err(|e| format!("Failed parsing project JSON '{}': {e}", path.display()))?;
     crate::campaign::validate(&project)?;
     crate::timeline::validate(&project.production.timeline)?;
+    crate::mockups::validate(&project)?;
     if project.schema_version > 2 {
         return Err("This project requires a newer Canvas Studio document schema".into());
     }

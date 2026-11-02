@@ -9,7 +9,7 @@ def install(prefix=None):
     desktop.mkdir(parents=True,exist_ok=True);apps.mkdir(parents=True,exist_ok=True)
     backup=(prefix or Path(os.environ.get('XDG_STATE_HOME',home/'.local/state'))/'canvas-studio')/'launcher-backups'/str(time.time_ns());backup.mkdir(parents=True,exist_ok=True)
     icon=ROOT/'assets/canvas-studio.svg'
-    entry=f'''[Desktop Entry]\nVersion=1.0\nType=Application\nName=Canvas Studio\nGenericName=Design, Print & Motion Studio\nComment=Local visual design, books, film and mockups\nExec="{ROOT / 'launch-desktop.sh'}" %f\nTryExec={ROOT / 'launch-desktop.sh'}\nPath={ROOT}\nIcon={icon}\nTerminal=false\nCategories=Graphics;2DGraphics;3DGraphics;Office;\nStartupNotify=true\nStartupWMClass=Canvas Studio\n'''
+    entry=f'''[Desktop Entry]\nVersion=1.0\nType=Application\nName=Canvas Studio\nGenericName=Design, Print & Motion Studio\nComment=Local visual design, books, film and mockups\nExec="{ROOT / 'launch-desktop.sh'}" %f\nTryExec={ROOT / 'launch-desktop.sh'}\nPath={ROOT}\nIcon={icon}\nTerminal=false\nCategories=Graphics;2DGraphics;3DGraphics;\nStartupNotify=true\nStartupWMClass=Canvas Studio\n'''
     for parent in [desktop,apps]:
         for name in ['Camva Studio.desktop','Canvas Studio.desktop','camva-studio.desktop','canvas-studio.desktop']:
             p=parent/name

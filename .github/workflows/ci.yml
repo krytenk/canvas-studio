@@ -16,7 +16,7 @@ jobs:
       - name: Install native libraries and PDF verification tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxkbcommon-dev libwayland-dev libegl1-mesa-dev poppler-utils ffmpeg xvfb libxtst6 x11-utils libxkbcommon-x11-0 libgl1-mesa-dri libegl-mesa0 libglx-mesa0
+          sudo apt-get install -y build-essential pkg-config libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxkbcommon-dev libwayland-dev libegl1-mesa-dev poppler-utils ffmpeg desktop-file-utils xvfb libxtst6 x11-utils libxkbcommon-x11-0 libgl1-mesa-dri libegl-mesa0 libglx-mesa0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -54,11 +54,17 @@ jobs:
         run: .ui-venv/bin/python scripts/media_smoke.py --binary target/release/canvas-studio --chrome chromium
       - name: Exercise deterministic HyperFrames motion and source delivery
         run: .ui-venv/bin/python scripts/motion_smoke.py --binary target/release/canvas-studio --chrome chromium
+      - name: Exercise Three.js product scenes and desktop launcher repair
+        run: |
+          python3 scripts/desktop_launcher_smoke.py
+          .ui-venv/bin/python scripts/mockup_smoke.py --binary target/release/canvas-studio --chrome chromium
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: canvas-studio-ui-proofs
           path: |
+            qa/mockups/*.png
+            qa/mockups/report.json
             qa/motion/motion-ui.png
             qa/motion/report.json
             qa/media/film-ui.png

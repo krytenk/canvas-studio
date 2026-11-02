@@ -128,6 +128,9 @@ impl CanvasStudioApp {
     }
 
     pub(crate) fn render_book(&mut self, ui: &mut Ui) {
+        ui.collapsing("3D product / book mockups", |ui| {
+            self.render_mockup_tools(ui)
+        });
         ui.heading("Book Production");
         ui.checkbox(
             &mut self.project.production.book.enabled,

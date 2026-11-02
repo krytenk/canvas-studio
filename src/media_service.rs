@@ -19,8 +19,9 @@ static SCRIPT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 fn script() -> Result<PathBuf, String> {
     SCRIPT
         .get_or_init(|| {
-            let path = crate::media_store::folder("runtime")?
-                .join(format!("worker-{}.py", env!("CARGO_PKG_VERSION")));
+            let dir = crate::media_store::folder("runtime")?.join(env!("CARGO_PKG_VERSION"));
+            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let path = dir.join("worker.py");
             let tmp = path.with_extension(format!("{}.tmp", generate_document_id()));
             fs::write(&tmp, include_str!("../media/studio_media.py")).map_err(|e| e.to_string())?;
             fs::rename(tmp, &path).map_err(|e| e.to_string())?;
@@ -38,6 +39,31 @@ fn script() -> Result<PathBuf, String> {
                 let tmp = dest.with_extension(format!("{}.tmp", generate_document_id()));
                 fs::write(&tmp, data).map_err(|e| e.to_string())?;
                 fs::rename(tmp, dest).map_err(|e| e.to_string())?;
+            }
+            fs::create_dir_all(path.parent().unwrap().join("vendor")).map_err(|e| e.to_string())?;
+            for (name, data) in [
+                (
+                    "studio_mockup.py",
+                    include_str!("../media/studio_mockup.py"),
+                ),
+                ("mockup-scene.js", include_str!("../web/mockup-scene.js")),
+                (
+                    "vendor/three.module.js",
+                    include_str!("../web/vendor/three.module.js"),
+                ),
+                (
+                    "vendor/three.core.js",
+                    include_str!("../web/vendor/three.core.js"),
+                ),
+                (
+                    "vendor/THREE-LICENSE.txt",
+                    include_str!("../web/vendor/THREE-LICENSE.txt"),
+                ),
+            ] {
+                let dest = path.parent().unwrap().join(name);
+                let temp = dest.with_extension(format!("{}.tmp", generate_document_id()));
+                fs::write(&temp, data).map_err(|e| e.to_string())?;
+                fs::rename(temp, dest).map_err(|e| e.to_string())?;
             }
             Ok(path)
         })
@@ -403,12 +429,21 @@ pub fn output(id: &str, doc: &str) -> Result<PathBuf, String> {
     if state["state"] != "complete" {
         return Err("The media job has not completed".into());
     }
-    if !["preview", "export", "frame", "source"].contains(&state["mode"].as_str().unwrap_or("")) {
+    if ![
+        "preview",
+        "export",
+        "frame",
+        "source",
+        "mockup_poster",
+        "mockup_movie",
+    ]
+    .contains(&state["mode"].as_str().unwrap_or(""))
+    {
         return Err("This job has no movie/frame output".into());
     }
     Ok(id_path(id)?.join(if state["mode"] == "source" {
         "motion-source.zip"
-    } else if state["mode"] == "frame" {
+    } else if state["mode"] == "frame" || state["mode"] == "mockup_poster" {
         "frame.png"
     } else {
         "movie.mp4"

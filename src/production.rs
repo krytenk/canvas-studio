@@ -71,6 +71,7 @@ pub struct ProductionSettings {
     pub puzzles: Vec<crate::puzzle_production::WordSearchProduct>,
     pub studio: crate::campaign::StudioSettings,
     pub timeline: crate::timeline::Timeline,
+    pub mockups: Vec<crate::mockups::Mockup>,
 }
 
 impl ProductionSettings {

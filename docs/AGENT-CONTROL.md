@@ -188,3 +188,9 @@ creates a full-resolution source bundle; `studio_media_job` operation `source`
 saves a completed motion preview/export's bundle. Existing guards and workspace
 boundaries apply. See [Motion studio](MOTION-STUDIO.md) for dependencies, source
 editability, units and the version-4 feature guard.
+
+## 1.15 product scenes
+
+The adapter exposes **14 tools**, adding `studio_mockup_render` and shared typed
+mockup commands. See [Product studio](PRODUCT-MOCKUPS.md#agent-control) for the
+complete book/box/card workflow and the snapshot semantics of poster/Film placement.

@@ -26,7 +26,7 @@ working live-browser STDIO MCP adapter. See [agent control](AGENT-CONTROL.md).
 Next: shared layout commands and campaign components/brand tokens; then a real
 media timeline and audio/proxy pipeline; then a deterministic HyperFrames
 adapter; then practical optional Three.js product mockups. Video tracks and rendered AV previews arrived in 1.13; version 1.14 adds
-HyperFrames motion/source delivery. Practical 3D remains the next stage. Each
+HyperFrames motion/source delivery; 1.15 adds practical product/book mockups. Each
 stage has an acceptance workflow in the review. Local storage is sufficient;
 remote hosting remains a separate decision.
 
@@ -60,3 +60,14 @@ and source ZIP/manifests form its acceptance workflow. Native SVG keeps text and
 artwork editable alongside the native master; imported HTML is not a second
 project model. Node/Chromium are optional local motion dependencies. The next
 stage is E: practical Three.js product/book mockups with a static poster fallback.
+
+### Stage E — implemented in 1.15
+
+[Product studio](PRODUCT-MOCKUPS.md) adds Three.js books, boxes and card stacks
+with native editable front/back cover textures, camera/material/light controls,
+on-demand browser preview, local PNG/MP4 renders and source delivery. Native
+controls review posters; static image placement supports PDF/PNG. Completed
+six-second reveals enter Film as video snapshots. Portable v5 scenes, stale
+render checks and deterministic rendering/seek workflows cover acceptance.
+Imported meshes, spine artwork and editable per-clip 3D geometry remain future
+work. The Linux desktop installer also repairs stale Camva 1.0.1 launchers.

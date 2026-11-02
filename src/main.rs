@@ -19,6 +19,10 @@ mod magic_studio;
 mod media_service;
 mod media_store;
 mod media_ui;
+#[cfg(test)]
+mod mockup_tests;
+mod mockup_ui;
+mod mockups;
 mod model;
 mod motion;
 #[cfg(test)]
@@ -243,6 +247,7 @@ struct CanvasStudioApp {
     queued_save: Option<bool>,
     queued_history: i8,
     film_ui: crate::media_ui::FilmUi,
+    mockup_ui: crate::mockup_ui::MockupUi,
 }
 
 impl CanvasStudioApp {
@@ -328,6 +333,7 @@ impl CanvasStudioApp {
             queued_save: None,
             queued_history: 0,
             film_ui: Default::default(),
+            mockup_ui: Default::default(),
         };
         app.recovery_available = app.latest_available_recovery_path().is_some();
         app.refresh_template_library();
@@ -3240,6 +3246,8 @@ impl CanvasStudioApp {
     }
 
     fn render_dock_magic_studio(&mut self, ui: &mut Ui) {
+        self.render_mockup_tools(ui);
+        ui.separator();
         ui.heading("✨ Local Studio Tools (Heuristic & Template Suite)");
         ui.label(
             RichText::new(

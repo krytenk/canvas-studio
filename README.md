@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.14.0**, with imported fonts, rich paragraphs, portable
+Current development: **1.15.0**, with imported fonts, rich paragraphs, portable
 projects, linked collections/CSV production, books, checked word searches and local browser editing. An 18-design visual catalog includes editable Instagram
 carousels/stories and YouTube thumbnails/channel artwork.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
@@ -40,11 +40,12 @@ jobs. Originals travel in portable projects. Browser playback is integrated;
 native playback opens in ffplay. Python 3 and FFmpeg/FFprobe are required for
 media work. Saved keyframes and a deterministic HyperFrames adapter are available in
 [Motion studio](docs/MOTION-STUDIO.md), with source ZIP/manifest delivery and
-optional pinned Node/Chromium setup. Three.js remains the next milestone.
+optional pinned Node/Chromium setup. [Product studio](docs/PRODUCT-MOCKUPS.md) adds
+Three.js books, boxes and stationery with listing PNGs and six-second reveals.
 
 ## Design with a coding agent
 
-The local [STDIO MCP adapter](docs/AGENT-CONTROL.md) exposes 13 tools to inspect,
+The local [STDIO MCP adapter](docs/AGENT-CONTROL.md) exposes 14 tools to inspect,
 compose, preview, check and export the live browser design. It uses explicit
 document/revision checks, atomic undoable batches and a scoped local workspace.
 No model subscription or Python package is required by the adapter itself.
@@ -223,3 +224,16 @@ to the CSV or absolute paths. Batch production runs in the background and writes
 a new folder with PDF/proof files and `report.json`. Missing required values,
 unsupported content and text overflow fail the affected record. No master is
 overwritten. Enable editable copies if native `.canvas` files are also needed.
+
+### Product mockups and Linux desktop shortcut
+
+Version 1.15 adds [Three.js product studio](docs/PRODUCT-MOCKUPS.md): editable
+cover artwork on books, boxes and stationery, listing PNGs, six-second video
+reveals and portable scene/source delivery. Browser **Mockups** offers live 3D;
+native **Tools** and **Book** offer art direction and rendered poster review.
+
+Run `python3 scripts/install_desktop.py` from the app folder to create or repair
+your Linux desktop/menu shortcuts. Existing Camva launchers are backed up and
+redirected to the current app. The launcher works independently of the current
+directory, accepts a `.canvas` file, and writes private startup details to
+`~/.local/state/canvas-studio/desktop.log` (or `$XDG_STATE_HOME/canvas-studio`).

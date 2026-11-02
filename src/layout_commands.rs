@@ -54,6 +54,9 @@ fn rgb_value(v: &Value) -> Result<ColorRgba, String> {
     Ok(rgb((n >> 16) as u8, (n >> 8) as u8, n as u8))
 }
 pub fn supports(action: &str) -> bool {
+    if crate::mockups::supports(action) {
+        return true;
+    }
     if crate::timeline::supports(action) {
         return true;
     }
@@ -80,6 +83,9 @@ pub fn supports(action: &str) -> bool {
 }
 pub fn apply(p: &mut Project, v: &Value) -> Result<(), String> {
     let action = text(v, "action")?;
+    if crate::mockups::supports(action) {
+        return crate::mockups::apply(p, v);
+    }
     if crate::timeline::supports(action) {
         return crate::timeline::apply(p, v);
     }

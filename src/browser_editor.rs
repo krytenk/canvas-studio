@@ -193,6 +193,11 @@ fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request
                 "/bundle.js",
                 "/film.js",
                 "/motion.js",
+                "/mockups.js",
+                "/mockup-scene.js",
+                "/vendor/three.module.js",
+                "/vendor/three.core.js",
+                "/mockups.css",
                 "/style.css",
             ]
             .contains(&path.as_str());
@@ -774,7 +779,7 @@ fn state(s: &Session, page: usize) -> Value {
             timeline["clips"][i]["caption"]["family"] = json!(family(st.family));
         }
     }
-    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p),"timeline":timeline})
+    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p),"timeline":timeline,"mockups":p.production.mockups})
 }
 fn studio_state(p: &Project) -> Value {
     let s = &p.production.studio;
@@ -841,6 +846,15 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         }
         let read_project = alternate.as_ref().unwrap_or(&s.project);
         return match base {
+            "/api/mockups/texture" => Ok(Response::bytes(
+                "image/png",
+                crate::mockups::texture_bytes(
+                    &s.project,
+                    &query(&req.path, "id").ok_or("Missing scene")?,
+                    query(&req.path, "back").is_some(),
+                )?,
+                s.revision,
+            )),
             "/api/film/motion-tools" => Ok(Response::value(crate::motion::doctor(), s.revision)),
             "/api/film/source" => {
                 let id = query(&req.path, "id").ok_or("Missing job")?;
@@ -1047,6 +1061,19 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         return Ok(r);
     }
     match base {
+        "/api/mockups/render" => {
+            let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
+            let id = crate::mockups::start(
+                &s.project,
+                s.revision,
+                v["id"].as_str().ok_or("Choose a scene")?,
+                v["movie"].as_bool().unwrap_or(false),
+            )?;
+            return Ok(Response::value(
+                json!({"id":id,"source_revision":s.revision}),
+                s.revision,
+            ));
+        }
         "/api/film/clear-jobs" => {
             let count = crate::media_service::clear_finished(&s.project.document_id)?;
             return Ok(Response::value(json!({"cleared":count}), s.revision));
@@ -1329,6 +1356,23 @@ fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Sessi
                 "text/html; charset=utf-8",
                 include_bytes!("../web/index.html").as_slice(),
             )),
+            "/mockups.js" => Some((
+                "application/javascript",
+                include_bytes!("../web/mockups.js").as_slice(),
+            )),
+            "/mockup-scene.js" => Some((
+                "application/javascript",
+                include_bytes!("../web/mockup-scene.js").as_slice(),
+            )),
+            "/vendor/three.module.js" => Some((
+                "application/javascript",
+                include_bytes!("../web/vendor/three.module.js").as_slice(),
+            )),
+            "/vendor/three.core.js" => Some((
+                "application/javascript",
+                include_bytes!("../web/vendor/three.core.js").as_slice(),
+            )),
+            "/mockups.css" => Some(("text/css", include_bytes!("../web/mockups.css").as_slice())),
             "/motion.js" => Some((
                 "text/javascript; charset=utf-8",
                 include_bytes!("../web/motion.js").as_slice(),

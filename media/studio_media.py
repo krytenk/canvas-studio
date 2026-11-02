@@ -140,6 +140,9 @@ class Worker:
             elif self.spec['op']=='motion':
                 import studio_motion
                 result=studio_motion.run(self)
+            elif self.spec['op']=='mockup':
+                import studio_mockup
+                result=studio_mockup.run(self)
             else:raise ValueError('Unknown media operation')
             atomic(self.result,dict(state='complete',result=result))
         except Cancelled:atomic(self.result,dict(state='cancelled',error='Operation cancelled; source project preserved'))
