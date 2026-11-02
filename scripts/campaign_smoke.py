@@ -78,6 +78,10 @@ def run(binary,chrome):
                 page.get_by_role('button',name='Undo',exact=True).click();page.wait_for_function('() => state.elements.length===6')
                 page.get_by_role('tab',name='Fields',exact=True).click();page.get_by_label('brand',exact=True).fill('KINDFOLD / NEW CHAPTER')
                 page.locator('form.field-row').filter(has=page.get_by_label('brand',exact=True)).get_by_role('button').click();page.wait_for_function("() => state.fields.find(f=>f.key==='brand').value==='KINDFOLD / NEW CHAPTER'")
+                page.get_by_label('headline',exact=True).fill('Room for better\nideas.')
+                page.locator('form.field-row').filter(has=page.get_by_label('headline',exact=True)).get_by_role('button').click()
+                page.wait_for_function("() => state.fields.find(f=>f.key==='headline').value==='Room for better\\nideas.'")
+                assert client.call('studio_document')['fields'][next(i for i,f in enumerate(client.call('studio_document')['fields']) if f['key']=='headline')]['value']=='Room for better\nideas.'
                 page.get_by_role('button',name='Campaign and brand tools',exact=True).click()
                 page.get_by_role('button',name='YouTube thumbnail · 1280 × 720',exact=True).click();page.wait_for_function("() => state.studio.variants.find(v=>v.active).name==='YouTube thumbnail'")
                 assert 'KINDFOLD / NEW CHAPTER' in page.locator('#preview').inner_text()

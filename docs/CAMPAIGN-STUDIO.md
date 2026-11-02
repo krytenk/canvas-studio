@@ -13,7 +13,8 @@ Undo remains available. On desktop, expand **Campaign layouts** in Designs.
 
 Choose a layout in Campaign to switch compositions. It keeps its own dimensions,
 pages, guides, book settings and artwork. **Fields** changes shared names,
-headlines, descriptions and calls to action across the campaign. Apply each form
+headlines, descriptions and calls to action across the campaign. Multiline copy
+retains its line breaks in the field editor. Apply each form
 explicitly. Long replacement copy can overflow; production exports report it.
 
 **Linked brand colours** change named colours across all layouts and saved
