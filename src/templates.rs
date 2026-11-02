@@ -199,6 +199,7 @@ fn new_template_project(title: &str, format: DesignFormat) -> Project {
         crop_marks: false,
         pages: Vec::new(),
         brand_kit: Default::default(),
+        imported_fonts: Vec::new(),
         next_id: 500,
     }
 }

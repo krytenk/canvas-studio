@@ -381,6 +381,7 @@ pub enum FontFamily {
     PosterHeavy,
     #[serde(alias = "NotoSerifItalic", alias = "Pacifico")]
     EditorialItalic,
+    Imported(u64),
 }
 
 impl FontFamily {
@@ -394,19 +395,22 @@ impl FontFamily {
         ]
     }
 
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
+            FontFamily::Imported(id) => return format!("Imported {:016x}", id),
             FontFamily::Sans => "Noto Sans",
             FontFamily::DisplaySerif => "Noto Serif",
             FontFamily::MonoCode => "Noto Sans Mono",
             FontFamily::PosterHeavy => "Noto Sans Bold",
             FontFamily::EditorialItalic => "Noto Serif Italic",
         }
+        .to_string()
     }
 
     #[allow(dead_code)]
     pub fn css_stack(&self) -> &'static str {
         match self {
+            FontFamily::Imported(_) => "sans-serif",
             FontFamily::Sans => "'Noto Sans', 'Inter', 'Helvetica Neue', Arial, sans-serif",
             FontFamily::DisplaySerif => "'Noto Serif', 'Playfair Display', Georgia, serif",
             FontFamily::MonoCode => "'Noto Sans Mono', 'JetBrains Mono', monospace",
@@ -964,6 +968,8 @@ pub struct Project {
     pub crop_marks: bool,
     pub pages: Vec<CanvasPage>,
     pub brand_kit: BrandKit,
+    #[serde(default)]
+    pub imported_fonts: Vec<crate::imported_fonts::ImportedFont>,
     pub next_id: u64,
 }
 
@@ -987,6 +993,7 @@ impl Default for Project {
             crop_marks: false,
             pages: vec![CanvasPage::new(1, "Page 1")],
             brand_kit: BrandKit::default(),
+            imported_fonts: Vec::new(),
             next_id: 100,
         }
     }
@@ -1294,6 +1301,7 @@ impl SnapshotCache {
             crop_marks: project.crop_marks,
             pages,
             brand_kit: project.brand_kit.clone(),
+            imported_fonts: project.imported_fonts.clone(),
             next_id: project.next_id,
         }
     }

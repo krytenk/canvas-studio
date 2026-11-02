@@ -1,12 +1,15 @@
 mod canvas_view;
 mod document_ops;
 mod exporter;
+mod imported_fonts;
 #[cfg(test)]
 mod library_tests;
 mod magic_studio;
 mod model;
 mod template_library;
 mod templates;
+#[cfg(test)]
+mod typography_tests;
 #[cfg(test)]
 mod workflow_tests;
 
@@ -1734,6 +1737,7 @@ impl CanvasStudioApp {
                                         crop_marks: false,
                                         pages: vec![CanvasPage::new(1, "Page 1")],
                                         brand_kit: Default::default(),
+                                        imported_fonts: Vec::new(),
                                         next_id: 100,
                                     };
                                     let msg = format!("Created new {} project", fmt.label());
@@ -1940,6 +1944,7 @@ impl CanvasStudioApp {
                         };
 
                         let mut trigger_replace_image = false;
+                        let imported_fonts=self.project.imported_fonts.clone();
                         let pw = self.project.width;
                         let ph = self.project.height;
                         if let Some(page) = self.project.pages.get_mut(self.current_page_idx) {
@@ -2024,7 +2029,7 @@ impl CanvasStudioApp {
                                         ..
                                     } => {
                                         egui::ComboBox::from_id_salt("font_fam_bar")
-                                            .selected_text(font_family.label())
+                                            .selected_text(imported_fonts.iter().find(|f|FontFamily::Imported(f.id)==*font_family).map(|f|f.name.clone()).unwrap_or_else(||font_family.label()))
                                             .show_ui(ui, |ui| {
                                                 for ff in FontFamily::all() {
                                                     ui.selectable_value(
@@ -2033,6 +2038,8 @@ impl CanvasStudioApp {
                                                         ff.label(),
                                                     );
                                                 }
+                                                for font in &imported_fonts {ui.selectable_value(font_family,FontFamily::Imported(font.id),&font.name);}
+
                                             });
 
                                         if ui.small_button("−").clicked() {
@@ -2048,8 +2055,10 @@ impl CanvasStudioApp {
                                         }
 
                                         color_Edit_button(ui, color);
-                                        ui.toggle_value(bold, RichText::new("B").strong());
-                                        ui.toggle_value(italic, RichText::new("I").italics());
+                                        ui.add_enabled_ui(!matches!(font_family,FontFamily::Imported(_)),|ui| {
+                                            ui.toggle_value(bold, RichText::new("B").strong());
+                                            ui.toggle_value(italic, RichText::new("I").italics());
+                                        }).response.on_hover_text("For imported fonts, select the actual bold or italic face from the font menu");
                                         ui.toggle_value(underline, RichText::new("U").underline());
                                         ui.toggle_value(uppercase, "AA");
 
@@ -2688,6 +2697,15 @@ impl CanvasStudioApp {
         ui.heading("𝐓 Typography & Presets");
         ui.add_space(8.0);
         self.render_selected_typography(ui);
+        if ui.button("Import TrueType Font (.ttf)").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Static TrueType face", &["ttf"])
+                .pick_file()
+            {
+                self.import_font_from_path(&path);
+            }
+        }
+        ui.label("Imported faces travel with the document. Choose each actual weight or italic face from the font menu.");
 
         if ui
             .add_sized(
@@ -3407,6 +3425,35 @@ impl CanvasStudioApp {
             ui.label("Brush Color:");
             color_Edit_button(ui, &mut self.canvas_state.draw_color);
         });
+    }
+
+    fn import_font_from_path(&mut self, path: &Path) {
+        let mut candidate = self.project.clone();
+        match imported_fonts::import(&mut candidate, path) {
+            Ok(id) => {
+                self.record_mutation();
+                self.project = candidate;
+                let selected = self.selected_id;
+                if let Some(element) = self
+                    .current_page_mut()
+                    .and_then(|p| p.elements.iter_mut().find(|e| Some(e.id) == selected))
+                {
+                    if let ElementKind::Text {
+                        font_family,
+                        bold,
+                        italic,
+                        ..
+                    } = &mut element.kind
+                    {
+                        *font_family = FontFamily::Imported(id);
+                        *bold = false;
+                        *italic = false;
+                    }
+                }
+                self.status_banner="Imported and embedded font face; choose its actual weight/style in the font menu".into();
+            }
+            Err(e) => self.status_banner = format!("Font import failed: {e}"),
+        }
     }
 
     fn render_selected_typography(&mut self, ui: &mut Ui) {
@@ -4540,6 +4587,7 @@ mod tests {
             crop_marks: false,
             pages: vec![CanvasPage::new(1, "Page 1")],
             brand_kit: Default::default(),
+            imported_fonts: Vec::new(),
             next_id: 50,
         };
         let (pt_w, pt_h) = proj.pdf_points_dimensions();

@@ -277,6 +277,7 @@ pub fn convert_layout_collection_to_project(
         crop_marks: false,
         pages,
         brand_kit: BrandKit::default(),
+        imported_fonts: Vec::new(),
         next_id,
     })
 }

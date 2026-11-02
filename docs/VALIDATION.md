@@ -1,5 +1,12 @@
 # Canvas Studio validation
 
+## 1.3.0 local validation
+
+41 release tests, formatting and the release build passed on 1 November 2026.
+New font checks cover loading embedded TrueType bytes in a fresh process, Unicode
+PDF text extraction, `pdffonts` verification, SVG font embedding, template insertion,
+missing/corrupt-font rejection and documents without the new font field.
+
 ## 1.2.0 local validation
 
 Verified on 1 November 2026 on Linux x86-64 / Ubuntu 24.04:

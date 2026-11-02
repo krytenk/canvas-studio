@@ -81,6 +81,16 @@ impl PreflightReport {
 pub fn run_export_preflight(project: &Project, target_dpi: u32) -> PreflightReport {
     let mut issues = Vec::new();
     let registry = FontRegistry::global();
+    if let Err(message) = crate::imported_fonts::register_project(project) {
+        issues.push(PreflightIssue {
+            page_index: 0,
+            element_id: 0,
+            element_name: "Document fonts".into(),
+            severity: PreflightSeverity::Error,
+            category: "missing_font",
+            message,
+        });
+    }
 
     for warning in registry.load_warnings() {
         issues.push(PreflightIssue {
@@ -1302,10 +1312,10 @@ fn assemble_pdf_document(
     let mut font_obj_ids: Vec<(String, usize)> = Vec::new();
 
     for slot in font_slots {
-        let raw_ttf: &[u8] = registry
+        let face = registry
             .get(slot.face_id)
-            .map(|f| f.bytes.as_slice())
-            .unwrap_or(&[]);
+            .ok_or("A font required by this PDF is missing")?;
+        let raw_ttf = face.bytes.as_slice();
         let compressed_ttf = zlib_compress(raw_ttf);
         let font_file_id = add_obj(build_stream_object(
             &format!(
@@ -1317,8 +1327,16 @@ fn assemble_pdf_document(
         ));
 
         let ps_name = slot.face_id.postscript_name();
+        let metrics = ttf_parser::Face::parse(raw_ttf, 0)
+            .map_err(|_| "Cannot parse embedded PDF font metrics")?;
+        let upm = metrics.units_per_em() as f32;
+        let unit = 1000. / upm;
+        let bbox = metrics.global_bounding_box();
+        let flags = 32 | if metrics.is_italic() { 64 } else { 0 };
         let descriptor_str = format!(
-            "<< /Type /FontDescriptor /FontName /{ps_name} /Flags 32 /FontBBox [-500 -300 1500 1100] /ItalicAngle 0 /Ascent 880 /Descent -220 /CapHeight 710 /StemV 80 /FontFile2 {font_file_id} 0 R >>"
+            "<< /Type /FontDescriptor /FontName /{ps_name} /Flags {flags} /FontBBox [{:.3} {:.3} {:.3} {:.3}] /ItalicAngle {:.3} /Ascent {:.3} /Descent {:.3} /CapHeight {:.3} /StemV 80 /FontFile2 {font_file_id} 0 R >>",
+            bbox.x_min as f32*unit,bbox.y_min as f32*unit,bbox.x_max as f32*unit,bbox.y_max as f32*unit,
+            metrics.italic_angle(),metrics.ascender() as f32*unit,metrics.descender() as f32*unit,metrics.capital_height().unwrap_or(metrics.ascender()) as f32*unit,
         );
         let descriptor_id = add_obj(descriptor_str.into_bytes());
 

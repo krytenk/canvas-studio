@@ -33,6 +33,29 @@ pub fn export_page_to_svg(
     project.width_mm = width / 96. * 25.4;
     project.height_mm = height / 96. * 25.4;
     project.pages = vec![page.clone()];
+    for element in &page.elements {
+        if let ElementKind::Text {
+            font_family: crate::model::FontFamily::Imported(id),
+            ..
+        } = &element.kind
+        {
+            if let Some(face) = crate::model::font_registry::FontRegistry::global()
+                .get(crate::model::font_registry::FontFaceId::Imported(*id))
+            {
+                if !project.imported_fonts.iter().any(|f| f.id == *id) {
+                    project
+                        .imported_fonts
+                        .push(crate::imported_fonts::ImportedFont {
+                            id: *id,
+                            name: face.id.postscript_name(),
+                            bold: face.bold,
+                            italic: face.italic,
+                            bytes: face.bytes.clone(),
+                        });
+                }
+            }
+        }
+    }
     let report = crate::model::pdf_export::run_export_preflight(&project, 96);
     let errors: Vec<_> = report
         .issues
@@ -1541,6 +1564,7 @@ pub fn save_project_json(project: &Project, path: &Path) -> Result<(), String> {
         )
     })?;
 
+    crate::imported_fonts::register_project(project)?;
     // 1. Validate and persist all required image assets on disk before touching the manifest.
     validate_and_stage_project_assets(project, &parent_dir)?;
 
@@ -1606,6 +1630,7 @@ pub fn load_project_json(path: &Path) -> Result<Project, String> {
         .map_err(|e| format!("Failed reading project file '{}': {e}", path.display()))?;
     let mut project: Project = serde_json::from_str(&data)
         .map_err(|e| format!("Failed parsing project JSON '{}': {e}", path.display()))?;
+    crate::imported_fonts::register_project(&project)?;
     hydrate_project_assets(&mut project);
     validate_loaded_project_assets(&project, path)?;
     Ok(project)

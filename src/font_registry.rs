@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, OnceLock, RwLock,
+};
 
 use ab_glyph::{Font, FontArc, GlyphId};
 
@@ -18,6 +21,7 @@ pub enum FontFaceId {
     NotoSerifBoldItalic,
     NotoSansMonoRegular,
     NotoSansMonoBold,
+    Imported(u64),
 }
 
 impl FontFaceId {
@@ -38,6 +42,7 @@ impl FontFaceId {
 
     fn embedded_bytes(&self) -> &'static [u8] {
         match self {
+            Self::Imported(_) => &[],
             Self::NotoSansRegular => include_bytes!("../assets/fonts/NotoSans-Regular.ttf"),
             Self::NotoSansBold => include_bytes!("../assets/fonts/NotoSans-Bold.ttf"),
             Self::NotoSansItalic => include_bytes!("../assets/fonts/NotoSans-Italic.ttf"),
@@ -51,8 +56,12 @@ impl FontFaceId {
         }
     }
 
-    pub fn filename(&self) -> &'static str {
+    pub fn filename(&self) -> String {
+        if let Self::Imported(id) = self {
+            return format!("CanvasImported{id:016x}.ttf");
+        }
         match self {
+            Self::Imported(_) => unreachable!(),
             FontFaceId::NotoSansRegular => "NotoSans-Regular.ttf",
             FontFaceId::NotoSansBold => "NotoSans-Bold.ttf",
             FontFaceId::NotoSansItalic => "NotoSans-Italic.ttf",
@@ -64,10 +73,15 @@ impl FontFaceId {
             FontFaceId::NotoSansMonoRegular => "NotoSansMono-Regular.ttf",
             FontFaceId::NotoSansMonoBold => "NotoSansMono-Bold.ttf",
         }
+        .to_string()
     }
 
-    pub fn postscript_name(&self) -> &'static str {
+    pub fn postscript_name(&self) -> String {
+        if let Self::Imported(id) = self {
+            return format!("CanvasImported{id:016x}");
+        }
         match self {
+            Self::Imported(_) => unreachable!(),
             FontFaceId::NotoSansRegular => "NotoSans-Regular",
             FontFaceId::NotoSansBold => "NotoSans-Bold",
             FontFaceId::NotoSansItalic => "NotoSans-Italic",
@@ -79,14 +93,16 @@ impl FontFaceId {
             FontFaceId::NotoSansMonoRegular => "NotoSansMono-Regular",
             FontFaceId::NotoSansMonoBold => "NotoSansMono-Bold",
         }
+        .to_string()
     }
 
-    pub fn egui_family_name(&self) -> &'static str {
+    pub fn egui_family_name(&self) -> String {
         self.postscript_name()
     }
 
     pub fn svg_family_stack(&self) -> &'static str {
         match self {
+            Self::Imported(_) => "sans-serif",
             FontFaceId::NotoSansRegular
             | FontFaceId::NotoSansBold
             | FontFaceId::NotoSansItalic
@@ -102,6 +118,9 @@ impl FontFaceId {
     }
 
     pub fn is_bold(&self) -> bool {
+        if let Self::Imported(_) = self {
+            return FontRegistry::global().get(*self).is_some_and(|f| f.bold);
+        }
         matches!(
             self,
             FontFaceId::NotoSansBold
@@ -113,6 +132,9 @@ impl FontFaceId {
     }
 
     pub fn is_italic(&self) -> bool {
+        if let Self::Imported(_) = self {
+            return FontRegistry::global().get(*self).is_some_and(|f| f.italic);
+        }
         matches!(
             self,
             FontFaceId::NotoSansItalic
@@ -141,6 +163,7 @@ impl FontFaceId {
 
     pub fn resolve(family: FontFamily, bold: bool, italic: bool) -> Self {
         match family {
+            FontFamily::Imported(id) => Self::Imported(id),
             FontFamily::Sans => match (bold, italic) {
                 (false, false) => FontFaceId::NotoSansRegular,
                 (true, false) => FontFaceId::NotoSansBold,
@@ -185,10 +208,14 @@ pub struct LoadedFontFace {
     pub font: FontArc,
     pub source_path: PathBuf,
     pub used_fallback_dir: bool,
+    pub bold: bool,
+    pub italic: bool,
 }
 
 pub struct FontRegistry {
-    faces: HashMap<FontFaceId, LoadedFontFace>,
+    faces: HashMap<FontFaceId, Arc<LoadedFontFace>>,
+    imported: RwLock<HashMap<FontFaceId, Arc<LoadedFontFace>>>,
+    generation: AtomicU64,
     pub load_warnings: Vec<String>,
 }
 
@@ -208,13 +235,15 @@ impl FontRegistry {
                 Ok(font) => {
                     faces.insert(
                         id,
-                        LoadedFontFace {
+                        Arc::new(LoadedFontFace {
                             id,
                             bytes: Arc::new(bytes),
                             font,
                             source_path: PathBuf::from(format!("embedded/{}", id.filename())),
                             used_fallback_dir: false,
-                        },
+                            bold: id.is_bold(),
+                            italic: id.is_italic(),
+                        }),
                     );
                 }
                 Err(_) => load_warnings.push(format!("Invalid embedded font '{}'", id.filename())),
@@ -222,14 +251,64 @@ impl FontRegistry {
         }
         Self {
             faces,
+            imported: RwLock::new(HashMap::new()),
+            generation: AtomicU64::new(1),
             load_warnings,
         }
     }
 
-    pub fn get(&self, id: FontFaceId) -> Option<&LoadedFontFace> {
-        self.faces
-            .get(&id)
-            .or_else(|| self.faces.get(&FontFaceId::NotoSansRegular))
+    pub fn get(&self, id: FontFaceId) -> Option<Arc<LoadedFontFace>> {
+        match id {
+            FontFaceId::Imported(_) => self.imported.read().ok()?.get(&id).cloned(),
+            _ => self.faces.get(&id).cloned(),
+        }
+    }
+
+    pub fn register_imported(
+        &self,
+        input: &crate::imported_fonts::ImportedFont,
+    ) -> Result<(), String> {
+        let id = FontFaceId::Imported(input.id);
+        if let Some(existing) = self.get(id) {
+            return if existing.bytes == input.bytes
+                && existing.bold == input.bold
+                && existing.italic == input.italic
+            {
+                Ok(())
+            } else {
+                Err("Imported font identity collision".into())
+            };
+        }
+        let checked = crate::imported_fonts::parse(input.bytes.as_ref().clone())?;
+        if checked.id != input.id || checked.bold != input.bold || checked.italic != input.italic {
+            return Err("Imported font metadata does not match its bytes".into());
+        }
+        let font = FontArc::try_from_vec(input.bytes.as_ref().clone())
+            .map_err(|_| "Invalid imported font")?;
+        let loaded = Arc::new(LoadedFontFace {
+            id,
+            bytes: input.bytes.clone(),
+            font,
+            source_path: PathBuf::from(format!("embedded-project/{}", id.filename())),
+            used_fallback_dir: false,
+            bold: checked.bold,
+            italic: checked.italic,
+        });
+        let mut imported = self
+            .imported
+            .write()
+            .map_err(|_| "Font registry unavailable")?;
+        imported.insert(id, loaded);
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn all_ids(&self) -> Vec<FontFaceId> {
+        let mut ids = FontFaceId::all().to_vec();
+        if let Ok(imported) = self.imported.read() {
+            ids.extend(imported.keys().copied());
+        }
+        ids
     }
 
     pub fn resolve_face(
@@ -237,7 +316,7 @@ impl FontRegistry {
         family: FontFamily,
         bold: bool,
         italic: bool,
-    ) -> Option<&LoadedFontFace> {
+    ) -> Option<Arc<LoadedFontFace>> {
         let id = FontFaceId::resolve(family, bold, italic);
         self.get(id)
     }
@@ -248,8 +327,8 @@ impl FontRegistry {
         &self,
         primary_id: FontFaceId,
         ch: char,
-    ) -> Option<(FontFaceId, &LoadedFontFace, GlyphId, bool)> {
-        if let Some(primary) = self.faces.get(&primary_id) {
+    ) -> Option<(FontFaceId, Arc<LoadedFontFace>, GlyphId, bool)> {
+        if let Some(primary) = self.get(primary_id) {
             let gid = primary.font.glyph_id(ch);
             if gid.0 != 0 {
                 return Some((primary_id, primary, gid, false));
@@ -260,14 +339,14 @@ impl FontRegistry {
             FontFaceId::NotoSerifRegular,
             FontFaceId::NotoSansMonoRegular,
         ] {
-            if let Some(fb) = self.faces.get(&fallback_id) {
+            if let Some(fb) = self.get(fallback_id) {
                 let gid = fb.font.glyph_id(ch);
                 if gid.0 != 0 {
                     return Some((fallback_id, fb, gid, true));
                 }
             }
         }
-        self.faces.get(&primary_id).map(|primary| {
+        self.get(primary_id).map(|primary| {
             let gid = primary.font.glyph_id(ch);
             (primary_id, primary, gid, true)
         })
@@ -319,13 +398,14 @@ impl FontRegistry {
 /// so the live canvas preview renders the exact same font files as PNG, SVG, and PDF exports.
 pub fn register_egui_fonts(ctx: &egui::Context) {
     let registered_id = egui::Id::new("canvas-fonts-registered");
-    if ctx.data_mut(|d| d.get_temp::<bool>(registered_id).unwrap_or(false)) {
+    let generation = FontRegistry::global().generation.load(Ordering::Relaxed);
+    if ctx.data_mut(|d| d.get_temp::<u64>(registered_id).unwrap_or(0)) == generation {
         return;
     }
     let reg = FontRegistry::global();
     let mut defs = egui::FontDefinitions::default();
 
-    for &face_id in FontFaceId::all() {
+    for face_id in reg.all_ids() {
         if let Some(loaded) = reg.get(face_id) {
             let key = face_id.egui_family_name().to_string();
             defs.font_data.insert(
@@ -342,7 +422,7 @@ pub fn register_egui_fonts(ctx: &egui::Context) {
     // Set NotoSans-Regular as default Proportional and NotoSansMono-Regular as default Monospace
     if defs
         .font_data
-        .contains_key(FontFaceId::NotoSansRegular.egui_family_name())
+        .contains_key(&FontFaceId::NotoSansRegular.egui_family_name())
     {
         defs.families
             .entry(egui::FontFamily::Proportional)
@@ -354,7 +434,7 @@ pub fn register_egui_fonts(ctx: &egui::Context) {
     }
     if defs
         .font_data
-        .contains_key(FontFaceId::NotoSansMonoRegular.egui_family_name())
+        .contains_key(&FontFaceId::NotoSansMonoRegular.egui_family_name())
     {
         defs.families
             .entry(egui::FontFamily::Monospace)
@@ -368,5 +448,5 @@ pub fn register_egui_fonts(ctx: &egui::Context) {
     }
 
     ctx.set_fonts(defs);
-    ctx.data_mut(|d| d.insert_temp(registered_id, true));
+    ctx.data_mut(|d| d.insert_temp(registered_id, generation));
 }

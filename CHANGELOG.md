@@ -1,5 +1,13 @@
 # Changes
 
+## 1.3.0 — portable imported TrueType fonts
+
+- Import individual static TrueType faces, select their actual weight/style, and embed their bytes in editable projects and personal masters.
+- Imported faces are shared by preview, PNG, SVG and embedded-font PDF output; PDF font metrics now come from the actual face.
+- Opening a document validates imported-font identities and payloads. Missing fonts produce errors instead of silently changing production output. Inserting template pages retains their fonts.
+- Static TrueType outlines with editable embedding permission are supported. Variable fonts, collections and CFF OpenType outlines remain unsupported.
+- 41 release checks passed, including cold-process font loading, Unicode PDF text extraction, embedded-font inspection, missing/corrupt-font rejection and legacy compatibility.
+
 ## 1.2.0 — first print-studio milestone increment
 
 - Added **My Templates**: save a production master with a name, tags, image assets and preview; search the library and open independent working copies. Invalid library entries are reported without hiding healthy templates. Failed saves do not leave partial template entries.

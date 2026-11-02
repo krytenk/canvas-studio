@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.2.0**, with corrected template exports, group editing,
+Current development: **1.3.0**, with corrected template exports, group editing,
 a personal template library and print typography/position controls.
 See [changes](CHANGELOG.md) and the [print-first roadmap](docs/ROADMAP.md).
 
@@ -138,3 +138,11 @@ Bundled fonts retain the SIL Open Font License. See
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). A project-wide reuse licence
 has not yet been selected; making this repository public does not change the
 licences of its dependencies.
+
+### Imported fonts
+
+Use **Typography → Import TrueType Font** to add a static `.ttf` face. Select it
+in the font menu; import separate bold/italic faces when needed. Font bytes travel
+inside the saved project and template, so the source font file is not needed later.
+Only faces permitting editable outline embedding are accepted. Variable fonts,
+collections and CFF outlines are not supported yet.
