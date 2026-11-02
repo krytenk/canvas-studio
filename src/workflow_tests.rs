@@ -157,3 +157,38 @@ fn svg_and_html_refuse_unsupported_effects_instead_of_dropping_them() {
     project.pages.clear();
     assert!(export_project_to_html_deck(&project).is_err());
 }
+
+#[test]
+fn layer_selection_and_keyboard_operations_preserve_groups_and_locks() {
+    let mut app = CanvasStudioApp::new_headless_with_recovery_dir(Some(
+        std::env::temp_dir().join(model::generate_document_id()),
+    ));
+    app.project = build_template_project("brand_logo");
+    app.project.pages[0].elements.truncate(2);
+    app.canvas_state.selected_ids = app.project.pages[0].elements.iter().map(|e| e.id).collect();
+    app.selected_id = app.canvas_state.selected_ids.first().copied();
+    app.group_selected_elements();
+    let mut decoration = app.project.pages[0].elements[0].clone();
+    decoration.id = app.project.alloc_id();
+    decoration.group_id = None;
+    app.project.pages[0].elements.push(decoration.clone());
+    let original = app.project.pages[0].elements[..2].to_vec();
+    app.select_layer(original[0].id);
+    assert_eq!(app.canvas_state.selected_ids.len(), 2);
+    app.nudge_selected(Vec2::new(2., 4.));
+    for (after, before) in app.project.pages[0].elements[..2].iter().zip(&original) {
+        assert_eq!((after.x, after.y), (before.x + 2., before.y + 4.));
+    }
+    app.move_selected_layer(true);
+    assert_eq!(app.project.pages[0].elements[0].id, decoration.id);
+    assert_eq!(app.project.pages[0].elements[1].id, original[0].id);
+    app.project.pages[0].elements[1].locked = true;
+    let locked = app.project.clone();
+    app.nudge_selected(Vec2::new(10., 10.));
+    app.move_selected_layer(false);
+    app.delete_selected();
+    assert_eq!(app.project, locked);
+    app.project.pages[0].elements[1].locked = false;
+    app.delete_selected();
+    assert_eq!(app.project.pages[0].elements, vec![decoration]);
+}

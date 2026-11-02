@@ -7,7 +7,7 @@ Verified on 1 November 2026 on Linux x86-64 / Ubuntu 24.04:
 | Check | Result |
 | --- | --- |
 | Formatting | Passed |
-| Release tests, offline and locked | 37 passed; 0 failed |
+| Release tests, offline and locked | 38 passed; 0 failed |
 | Release build | Passed |
 | Seven built-in templates, eight pages total | Edited title, saved/reopened, preflight at 300 DPI, PDF/PNG/SVG/HTML export at proof settings |
 | Independent PDF verification | Poppler text extraction and renders succeeded; eight rendered pages visually reviewed |

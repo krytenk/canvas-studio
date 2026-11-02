@@ -924,22 +924,42 @@ impl CanvasStudioApp {
             nudge.y += step;
         }
         if nudge != Vec2::ZERO {
-            let ids_to_nudge: Vec<u64> = if !self.canvas_state.selected_ids.is_empty() {
-                self.canvas_state.selected_ids.clone()
-            } else if let Some(sel_id) = self.selected_id {
-                vec![sel_id]
-            } else {
-                Vec::new()
-            };
-            if !ids_to_nudge.is_empty() {
-                self.record_mutation();
-                if let Some(page) = self.current_page_mut() {
-                    for el in &mut page.elements {
-                        if ids_to_nudge.contains(&el.id) && !el.locked {
-                            el.x += nudge.x;
-                            el.y += nudge.y;
-                        }
-                    }
+            self.nudge_selected(nudge);
+        }
+    }
+
+    fn active_selection_ids(&self) -> Vec<u64> {
+        self.current_page()
+            .map(|p| {
+                document_ops::selection_ids(p, &self.canvas_state.selected_ids, self.selected_id)
+            })
+            .unwrap_or_default()
+    }
+
+    fn selection_is_locked(&self, ids: &[u64]) -> bool {
+        self.current_page()
+            .is_some_and(|p| p.elements.iter().any(|e| ids.contains(&e.id) && e.locked))
+    }
+
+    fn select_layer(&mut self, id: u64) {
+        self.selected_id = Some(id);
+        self.canvas_state.selected_ids = self
+            .current_page()
+            .map(|p| document_ops::selection_ids(p, &[id], Some(id)))
+            .unwrap_or_default();
+    }
+
+    fn nudge_selected(&mut self, delta: Vec2) {
+        let ids = self.active_selection_ids();
+        if ids.is_empty() || self.selection_is_locked(&ids) {
+            return;
+        }
+        self.record_mutation();
+        if let Some(page) = self.current_page_mut() {
+            for e in &mut page.elements {
+                if ids.contains(&e.id) {
+                    e.x += delta.x;
+                    e.y += delta.y;
                 }
             }
         }
@@ -1061,21 +1081,21 @@ impl CanvasStudioApp {
     }
 
     fn delete_selected(&mut self) {
-        let ids_to_delete: Vec<u64> = if !self.canvas_state.selected_ids.is_empty() {
-            self.canvas_state.selected_ids.clone()
-        } else if let Some(sel_id) = self.selected_id {
-            vec![sel_id]
-        } else {
+        let ids = self.active_selection_ids();
+        if ids.is_empty() {
             return;
-        };
+        }
+        if self.selection_is_locked(&ids) {
+            self.status_banner = "Unlock the selection before deleting it".into();
+            return;
+        }
         self.record_mutation();
         if let Some(page) = self.current_page_mut() {
-            page.elements
-                .retain(|e| !ids_to_delete.contains(&e.id) || e.locked);
+            page.elements.retain(|e| !ids.contains(&e.id));
         }
         self.selected_id = None;
         self.canvas_state.selected_ids.clear();
-        self.status_banner = "Deleted selected element(s)".to_string();
+        self.status_banner = "Deleted selected element(s)".into();
     }
 
     fn move_selected_layer(&mut self, forward: bool) {
@@ -1086,6 +1106,9 @@ impl CanvasStudioApp {
             })
             .unwrap_or_default();
         if ids.is_empty() {
+            return;
+        }
+        if self.selection_is_locked(&ids) {
             return;
         }
         self.record_mutation();
@@ -3568,9 +3591,8 @@ impl CanvasStudioApp {
         ui.add_space(6.0);
         self.render_position_inspector(ui);
 
-        let mut move_up: Option<usize> = None;
-        let mut move_down: Option<usize> = None;
-        let mut delete_idx: Option<usize> = None;
+        let mut selection = None;
+        let mut action = None;
 
         if let Some(page) = self.project.pages.get_mut(self.current_page_idx) {
             let len = page.elements.len();
@@ -3595,18 +3617,17 @@ impl CanvasStudioApp {
                                 el.locked = !el.locked;
                             }
                             if ui.selectable_label(is_sel, &el.name).clicked() {
-                                self.selected_id = Some(el.id);
-                                self.canvas_state.selected_ids = vec![el.id];
+                                selection = Some(el.id);
                             }
                             ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.small_button("🗑").clicked() {
-                                    delete_idx = Some(rev_i);
+                                    action = Some((el.id, 0));
                                 }
                                 if rev_i > 0 && ui.small_button("⬇").clicked() {
-                                    move_down = Some(rev_i);
+                                    action = Some((el.id, 1));
                                 }
                                 if rev_i + 1 < len && ui.small_button("⬆").clicked() {
-                                    move_up = Some(rev_i);
+                                    action = Some((el.id, 2));
                                 }
                             });
                         });
@@ -3615,16 +3636,15 @@ impl CanvasStudioApp {
             }
         }
 
-        if move_up.is_some() || move_down.is_some() || delete_idx.is_some() {
-            self.record_mutation();
-            if let Some(page) = self.project.pages.get_mut(self.current_page_idx) {
-                if let Some(i) = move_up {
-                    page.elements.swap(i, i + 1);
-                } else if let Some(i) = move_down {
-                    page.elements.swap(i, i - 1);
-                } else if let Some(i) = delete_idx {
-                    page.elements.remove(i);
-                }
+        if let Some(id) = selection {
+            self.select_layer(id);
+        }
+        if let Some((id, command)) = action {
+            self.select_layer(id);
+            match command {
+                0 => self.delete_selected(),
+                1 => self.move_selected_layer(false),
+                _ => self.move_selected_layer(true),
             }
             self.reconcile_selection_and_page();
         }
