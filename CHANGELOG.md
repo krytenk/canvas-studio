@@ -1,5 +1,14 @@
 # Changes
 
+## 1.9.0 — local browser editing
+
+- Added `--serve-browser` and `run-browser.sh`: a bundled browser interface backed by the native document/font/export engine, with no account, subscription or JavaScript runtime requirement.
+- Open/save portable projects, personalise shared fields/photos, edit text/paragraphs/character emphasis, import fonts, add/replace photos, move/resize/rotate layers, manage pages and undo/redo. Shared-style definitions, book-master editing, puzzles and CSV remain desktop tools; their data is preserved.
+- Added native SVG previews, print checks, PDF output and 150-DPI PNG proofs. Production downloads reject required-field failures, unsupported content, modified puzzle keys and text overflow.
+- Added private per-port recovery, revision conflict handling, draft-preserving form refresh and protection against downloading unapplied edits.
+- The loopback-only service requires a random session token and valid host/origin, gates uploads before reading bodies, and bounds uploads/workers. It is not a public multi-user hosting service.
+- 73 Rust checks and isolated Chrome/Chromium/native-window workflows verify editable delivery, Unicode/imported fonts, photos, shared fields, typography, undo/redo, recovery, access checks and narrow layouts. GitHub CI now runs both UI workflows.
+
 ## 1.8.1 — native desktop usability fixes
 
 - Scroll the tool rail so Book/Puzzles remain reachable at 680 px window height. Split the header into two rows so Save/Export stay accessible at 1024 px width.

@@ -16,3 +16,8 @@ Thumbs.db
 *.canvas.json
 !examples/*.canvas.json
 recovery/
+
+/.ui-venv/
+
+__pycache__/
+*.pyc

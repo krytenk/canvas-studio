@@ -3,6 +3,7 @@ mod book_production;
 #[cfg(test)]
 mod book_tests;
 mod book_ui;
+mod browser_editor;
 mod canvas_view;
 mod document_ops;
 mod exporter;
@@ -4631,6 +4632,29 @@ fn main() -> eframe::Result<()> {
                 eprintln!("Project validation failed: {e}");
                 std::process::exit(1);
             }
+        }
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--serve-browser") {
+        let port = args
+            .iter()
+            .position(|a| a == "--port")
+            .and_then(|i| args.get(i + 1))
+            .map(|s| s.parse::<u16>())
+            .transpose()
+            .unwrap_or_else(|_| {
+                eprintln!("Port must be 0–65535");
+                std::process::exit(2);
+            })
+            .unwrap_or(8787);
+        let initial = args
+            .iter()
+            .position(|a| a == "--open")
+            .and_then(|i| args.get(i + 1))
+            .map(PathBuf::from);
+        if let Err(error) = browser_editor::run(port, initial) {
+            eprintln!("{error}");
+            std::process::exit(1);
         }
         return Ok(());
     }

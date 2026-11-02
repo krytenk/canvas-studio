@@ -1,6 +1,6 @@
 # Practical print and digital product workflows
 
-Use Canvas Studio 1.8.0 or later for these features. All design work runs locally;
+Use Canvas Studio 1.9.0 or later for these features. All design work runs locally;
 no account, subscription or paid generation service is required.
 
 ## Fonts and paragraphs
@@ -81,8 +81,9 @@ the design, imported fonts and image assets. Existing JSON-plus-assets projects
 remain supported. Print guides and named output presets travel with the project;
 guides are editing overlays and never appear in the exported artwork.
 
-A `.canvas` file is editable in the native Canvas Studio application. The distributed
-binary is Linux x86-64; this is not a browser/Canva link, PPTX or fillable PDF.
+A `.canvas` file is editable in the native Canvas Studio application or its local
+browser editor. The distributed host binary is Linux x86-64; this does not provide
+a public customer/Canva link, PPTX or fillable PDF. See [the browser guide](BROWSER-EDITOR.md).
 PDF/PNG/SVG are production outputs, not evidence of unrestricted recipient editing.
 Test the actual recipient platform before advertising an editable product.
 

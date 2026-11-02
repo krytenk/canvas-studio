@@ -1,0 +1,1203 @@
+//! Loopback browser editing using the native model, typography and export engine.
+use crate::model::{FontFamily, TextRun};
+use crate::*;
+use serde_json::{json, Value};
+use std::{
+    collections::HashMap,
+    fs,
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+const LIMIT: usize = 128 * 1024 * 1024;
+struct Scratch(PathBuf);
+impl Scratch {
+    fn new() -> Result<Self, String> {
+        let p =
+            std::env::temp_dir().join(format!("canvas-browser-{}", model::generate_document_id()));
+        fs::create_dir(&p).map_err(|e| e.to_string())?;
+        Ok(Self(p))
+    }
+}
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+fn validate_document(project: &Project) -> Result<(), String> {
+    if project.pages.is_empty()
+        || project.pages.len() > 1000
+        || [
+            project.width,
+            project.height,
+            project.effective_width_mm(),
+            project.effective_height_mm(),
+        ]
+        .iter()
+        .any(|v| !v.is_finite() || *v <= 0.)
+    {
+        return Err("Use a document with positive dimensions and 1–1000 pages".into());
+    }
+    Ok(())
+}
+fn check_delivery(project: &Project) -> Result<(), String> {
+    let report = run_export_preflight(project, 300);
+    if report.has_errors() || report.has_overflows() {
+        return Err(report
+            .issues
+            .iter()
+            .filter(|i| {
+                i.severity == model::pdf_export::PreflightSeverity::Error
+                    || i.category == "text_overflow"
+            })
+            .map(|i| i.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; "));
+    }
+    Ok(())
+}
+struct Session {
+    project: Project,
+    revision: u64,
+    undo: Vec<Project>,
+    redo: Vec<Project>,
+    recovery: Option<PathBuf>,
+}
+impl Session {
+    fn commit(&mut self, candidate: Project) -> Result<(), String> {
+        validate_document(&candidate)?;
+        crate::imported_fonts::register_project(&candidate)?;
+        if let Some(path) = &self.recovery {
+            crate::project_package::save(&candidate, path)?;
+        }
+        self.undo.push(self.project.clone());
+        if self.undo.len() > 20 {
+            self.undo.remove(0);
+        }
+        self.redo.clear();
+        self.project = candidate;
+        self.revision += 1;
+        Ok(())
+    }
+    fn travel(&mut self, redo: bool) -> Result<(), String> {
+        let source = if redo { &self.redo } else { &self.undo };
+        let Some(candidate) = source.last().cloned() else {
+            return Err("No history in that direction".into());
+        };
+        if let Some(path) = &self.recovery {
+            crate::project_package::save(&candidate, path)?;
+        }
+        let prior = std::mem::replace(&mut self.project, candidate);
+        if redo {
+            self.redo.pop();
+            self.undo.push(prior);
+        } else {
+            self.undo.pop();
+            self.redo.push(prior);
+        }
+        self.revision += 1;
+        Ok(())
+    }
+}
+struct Request {
+    method: String,
+    path: String,
+    headers: HashMap<String, String>,
+    body: Vec<u8>,
+}
+struct HttpError {
+    status: u16,
+    message: String,
+}
+impl From<String> for HttpError {
+    fn from(message: String) -> Self {
+        Self {
+            status: 400,
+            message,
+        }
+    }
+}
+impl From<&str> for HttpError {
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
+}
+fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request, HttpError> {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .map_err(|e| e.to_string())?;
+    let mut data = Vec::new();
+    let end;
+    loop {
+        let mut b = [0; 8192];
+        let n = stream.read(&mut b).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Incomplete request".into());
+        }
+        data.extend_from_slice(&b[..n]);
+        if let Some(index) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+            end = index + 4;
+            break;
+        }
+        if data.len() > 32768 {
+            return Err("Headers too large".into());
+        }
+    }
+    if end > 32768 {
+        return Err("Headers too large".into());
+    }
+    let raw = std::str::from_utf8(&data[..end]).map_err(|_| "Invalid request headers")?;
+    let mut lines = raw.split("\r\n");
+    let first = lines
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .collect::<Vec<_>>();
+    if first.len() != 3 || first[2] != "HTTP/1.1" {
+        return Err("Use HTTP/1.1".into());
+    }
+    let method = first[0].to_string();
+    let path = first[1].to_string();
+    let mut headers = HashMap::new();
+    for line in lines.filter(|l| !l.is_empty()) {
+        let (key, value) = line.split_once(':').ok_or("Invalid header")?;
+        let key = key.trim().to_ascii_lowercase();
+        if headers.insert(key, value.trim().to_string()).is_some() {
+            return Err("Duplicate request header".into());
+        }
+    }
+    if headers.contains_key("transfer-encoding") {
+        return Err("Chunked requests are not supported".into());
+    }
+    let size = headers
+        .get("content-length")
+        .map(|v| v.parse::<usize>())
+        .transpose()
+        .map_err(|_| "Invalid Content-Length")?
+        .unwrap_or(0);
+    if size > LIMIT {
+        return Err("Upload exceeds 128 MiB".into());
+    }
+    if let Some((host, token)) = gate {
+        let static_page =
+            method == "GET" && ["/", "/app.js", "/style.css"].contains(&path.as_str());
+        if headers.get("host").map(String::as_str) != Some(host)
+            || headers
+                .get("origin")
+                .is_some_and(|origin| origin != &format!("http://{host}"))
+            || (!static_page && headers.get("x-canvas-token").map(String::as_str) != Some(token))
+        {
+            return Err(HttpError {
+                status: 403,
+                message: "Open the private local session link; cross-origin requests are disabled"
+                    .into(),
+            });
+        }
+    }
+    while data.len() < end + size {
+        let mut b = [0; 65536];
+        let n = stream.read(&mut b).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Incomplete upload".into());
+        }
+        data.extend_from_slice(&b[..n]);
+    }
+    Ok(Request {
+        method,
+        path,
+        headers,
+        body: data[end..end + size].to_vec(),
+    })
+}
+struct Response {
+    status: u16,
+    mime: &'static str,
+    body: Vec<u8>,
+    download: Option<&'static str>,
+    revision: u64,
+}
+impl Response {
+    fn bytes(mime: &'static str, body: Vec<u8>, revision: u64) -> Self {
+        Self {
+            status: 200,
+            mime,
+            body,
+            download: None,
+            revision,
+        }
+    }
+    fn value(value: Value, revision: u64) -> Self {
+        Self::bytes(
+            "application/json",
+            serde_json::to_vec(&value).unwrap(),
+            revision,
+        )
+    }
+    fn error(status: u16, message: &str) -> Self {
+        let mut response = Self::value(json!({"error":message}), 0);
+        response.status = status;
+        response
+    }
+}
+fn send(stream: &mut TcpStream, r: Response) {
+    let reason = match r.status {
+        200 => "OK",
+        400 => "Bad Request",
+        403 => "Forbidden",
+        404 => "Not Found",
+        409 => "Conflict",
+        _ => "Unprocessable Content",
+    };
+    let download = r
+        .download
+        .map(|n| format!("Content-Disposition: attachment; filename=\"{n}\"\r\n"))
+        .unwrap_or_default();
+    let header=format!("HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCross-Origin-Resource-Policy: same-origin\r\nX-Canvas-Revision: {}\r\nContent-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n{}Connection: close\r\n\r\n",r.status,reason,r.mime,r.body.len(),r.revision,download);
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(60)));
+    let _ = stream
+        .write_all(header.as_bytes())
+        .and_then(|_| stream.write_all(&r.body));
+}
+fn number(v: &Value, key: &str) -> Result<f32, String> {
+    let n = v
+        .get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| format!("Missing number: {key}"))? as f32;
+    if !n.is_finite() {
+        return Err("Numbers must be finite".into());
+    }
+    Ok(n)
+}
+fn id(v: &Value, key: &str) -> Result<u64, String> {
+    v.get(key)
+        .and_then(Value::as_str)
+        .ok_or("Missing layer/page identity")?
+        .parse()
+        .map_err(|_| "Invalid identity".into())
+}
+fn string<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
+    v.get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("Missing text: {key}"))
+}
+fn color(v: &Value) -> Result<ColorRgba, String> {
+    let s = string(v, "color")?;
+    if s.len() != 7 || !s.starts_with('#') {
+        return Err("Use #rrggbb".into());
+    }
+    let value = u32::from_str_radix(&s[1..], 16).map_err(|_| "Invalid colour")?;
+    Ok(rgb((value >> 16) as u8, (value >> 8) as u8, value as u8))
+}
+fn family(f: FontFamily) -> String {
+    match f {
+        FontFamily::Imported(id) => format!("imported:{id:016x}"),
+        _ => serde_json::to_value(f)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string(),
+    }
+}
+fn parse_family(project: &Project, key: &str) -> Result<FontFamily, String> {
+    if let Some(id) = key.strip_prefix("imported:") {
+        let id = u64::from_str_radix(id, 16).map_err(|_| "Invalid font")?;
+        if !project.imported_fonts.iter().any(|f| f.id == id) {
+            return Err("Import the font face first".into());
+        }
+        Ok(FontFamily::Imported(id))
+    } else {
+        serde_json::from_value(json!(key)).map_err(|_| "Unknown font".into())
+    }
+}
+fn element_mut<'a>(p: &'a mut Project, v: &Value) -> Result<&'a mut CanvasElement, String> {
+    let id = id(v, "id")?;
+    let e = p
+        .pages
+        .iter_mut()
+        .flat_map(|p| &mut p.elements)
+        .find(|e| e.id == id)
+        .ok_or("Layer not found")?;
+    if e.locked {
+        return Err("Unlock the layer before editing".into());
+    }
+    Ok(e)
+}
+fn edit(project: &mut Project, v: &Value) -> Result<(), String> {
+    let action = string(v, "action")?;
+    match action {
+        "title" => {
+            let value = string(v, "value")?;
+            if value.len() > 1000 {
+                return Err("Title too long".into());
+            }
+            project.title = value.into();
+        }
+        "field" => {
+            let key = string(v, "key")?;
+            let value = string(v, "value")?;
+            if value.len() > 100_000 {
+                return Err("Field too long".into());
+            }
+            let field = project
+                .production
+                .fields
+                .get_mut(key)
+                .ok_or("Field not found")?;
+            if field.image {
+                return Err("Use photo upload for this field".into());
+            }
+            field.value = value.into();
+        }
+        "text" => {
+            let f = v
+                .get("family")
+                .and_then(Value::as_str)
+                .map(|s| parse_family(project, s))
+                .transpose()?;
+            let actual = f.and_then(|family| {
+                if let FontFamily::Imported(id) = family {
+                    project
+                        .imported_fonts
+                        .iter()
+                        .find(|font| font.id == id)
+                        .map(|font| (font.bold, font.italic))
+                } else {
+                    None
+                }
+            });
+            let unit = project.effective_units_per_inch() / 72.;
+            let e = element_mut(project, v)?;
+            let ElementKind::Text {
+                content,
+                font_family,
+                font_size,
+                color: ink,
+                bold,
+                italic,
+                underline,
+                line_height,
+                letter_spacing,
+                ..
+            } = &mut e.kind
+            else {
+                return Err("Select a text layer".into());
+            };
+            if let Some(new) = v.get("content").and_then(Value::as_str) {
+                if new.len() > 100_000 {
+                    return Err("Text too long".into());
+                }
+                e.text_format.reconcile_edit(content, new);
+                *content = new.into();
+            }
+            if e.style_id.is_some() {
+                return Ok(());
+            }
+            if let Some(f) = f {
+                *font_family = f;
+            }
+            if v.get("size").is_some() {
+                let size = number(v, "size")?;
+                if !(1.0..=300.).contains(&size) {
+                    return Err("Type must be 1–300 pt".into());
+                }
+                *font_size = size * unit;
+            }
+            if v.get("color").is_some() {
+                *ink = color(v)?;
+            }
+            for (key, target) in [
+                ("bold", &mut *bold),
+                ("italic", &mut *italic),
+                ("underline", &mut *underline),
+            ] {
+                if let Some(value) = v.get(key).and_then(Value::as_bool) {
+                    *target = value;
+                }
+            }
+            if let Some((actual_bold, actual_italic)) = actual {
+                *bold = actual_bold;
+                *italic = actual_italic;
+            }
+            if v.get("leading").is_some() {
+                let value = number(v, "leading")?;
+                if !(0.5..=5.).contains(&value) {
+                    return Err("Leading must be 0.5–5".into());
+                }
+                *line_height = value;
+            }
+            if v.get("tracking").is_some() {
+                let value = number(v, "tracking")?;
+                if !(-20.0..=100.).contains(&value) {
+                    return Err("Tracking outside supported range".into());
+                }
+                *letter_spacing = value;
+            }
+            for (key, target) in [
+                ("space_before", &mut e.text_format.space_before),
+                ("space_after", &mut e.text_format.space_after),
+                ("first_line_indent", &mut e.text_format.first_line_indent),
+                ("inset_left", &mut e.text_format.inset_left),
+                ("inset_right", &mut e.text_format.inset_right),
+                ("inset_top", &mut e.text_format.inset_top),
+                ("inset_bottom", &mut e.text_format.inset_bottom),
+            ] {
+                if v.get(key).is_some() {
+                    let value = number(v, key)?;
+                    if !(0.0..=300.).contains(&value) {
+                        return Err("Paragraph measurements must be 0–300 pt".into());
+                    }
+                    *target = value;
+                }
+            }
+            e.text_format.validate(content)?;
+        }
+        "emphasis" => {
+            let e = element_mut(project, v)?;
+            let ElementKind::Text { content, .. } = &e.kind else {
+                return Err("Select text".into());
+            };
+            let start = v["start"].as_u64().ok_or("Missing selection start")? as usize;
+            let end = v["end"].as_u64().ok_or("Missing selection end")? as usize;
+            let property = string(v, "property")?;
+            let value = v["value"].as_bool().ok_or("Missing emphasis value")?;
+            let mut run = TextRun {
+                start,
+                end,
+                ..Default::default()
+            };
+            match property {
+                "bold" => run.bold = Some(value),
+                "italic" => run.italic = Some(value),
+                "underline" => run.underline = Some(value),
+                _ => return Err("Unknown emphasis".into()),
+            }
+            e.text_format.apply_run(run, content.chars().count());
+        }
+        "geometry" => {
+            let e = element_mut(project, v)?;
+            let values = [
+                number(v, "x")?,
+                number(v, "y")?,
+                number(v, "width")?,
+                number(v, "height")?,
+            ];
+            if values.iter().any(|v| v.abs() > 1_000_000.) {
+                return Err("Geometry outside supported range".into());
+            }
+            document_ops::set_geometry(e, values, [true; 4], 1., false)?;
+            if v.get("rotation").is_some() {
+                e.rotation = number(v, "rotation")? % 360.;
+            }
+        }
+        "visible" | "lock" => {
+            let id = id(v, "id")?;
+            let e = project
+                .pages
+                .iter_mut()
+                .flat_map(|p| &mut p.elements)
+                .find(|e| e.id == id)
+                .ok_or("Layer not found")?;
+            let value = v["value"].as_bool().ok_or("Missing value")?;
+            if action == "lock" {
+                e.locked = value;
+            } else {
+                if e.locked {
+                    return Err("Unlock layer first".into());
+                }
+                e.visible = value;
+            }
+        }
+        "delete" => {
+            let e = element_mut(project, v)?;
+            let id = e.id;
+            for p in &mut project.pages {
+                p.elements.retain(|e| e.id != id);
+            }
+        }
+        "duplicate" => {
+            let e = element_mut(project, v)?.clone();
+            let page = project
+                .pages
+                .iter()
+                .position(|p| p.elements.iter().any(|a| a.id == e.id))
+                .unwrap();
+            let copies = document_ops::fresh_copies(project, &[e], 24., 24.);
+            project.pages[page].elements.extend(copies);
+        }
+        "page_title" => {
+            let id = id(v, "id")?;
+            let title = string(v, "value")?;
+            project
+                .pages
+                .iter_mut()
+                .find(|p| p.id == id)
+                .ok_or("Page not found")?
+                .title = title.into();
+        }
+        "add_page" => {
+            let id = project.alloc_id();
+            project.pages.push(CanvasPage::new(id, "New page"));
+        }
+        "delete_page" => {
+            if project.pages.len() < 2 {
+                return Err("Keep at least one page".into());
+            }
+            let id = id(v, "id")?;
+            let index = project
+                .pages
+                .iter()
+                .position(|p| p.id == id)
+                .ok_or("Page not found")?;
+            project.pages.remove(index);
+        }
+        "move_page" => {
+            let id = id(v, "id")?;
+            let from = project
+                .pages
+                .iter()
+                .position(|p| p.id == id)
+                .ok_or("Page not found")?;
+            let to = v["to"].as_u64().ok_or("Missing page position")? as usize;
+            if to >= project.pages.len() {
+                return Err("Page outside document".into());
+            }
+            let p = project.pages.remove(from);
+            project.pages.insert(to, p);
+        }
+        "add_text" => {
+            let page = v["page"].as_u64().ok_or("Missing page")? as usize;
+            if page >= project.pages.len() {
+                return Err("Page outside document".into());
+            }
+            let mut e = templates::build_template_project("festival_poster")
+                .pages
+                .remove(0)
+                .elements
+                .into_iter()
+                .find(|e| matches!(e.kind, ElementKind::Text { .. }))
+                .ok_or("Text prototype unavailable")?;
+            e.id = project.alloc_id();
+            e.name = "New text".into();
+            e.x = 50.;
+            e.y = 50.;
+            e.width = (project.width - 100.).max(100.);
+            e.height = 100.;
+            e.rotation = 0.;
+            e.shadow = Default::default();
+            if let ElementKind::Text {
+                content,
+                font_family,
+                font_size,
+                color,
+                effect,
+                ..
+            } = &mut e.kind
+            {
+                *content = "Your text here".into();
+                *font_family = FontFamily::Sans;
+                *font_size = 24. * project.effective_units_per_inch() / 72.;
+                *color = rgb(25, 30, 40);
+                *effect = TextEffect::None;
+            }
+            project.pages[page].elements.push(e);
+        }
+        _ => return Err("Unknown editing action".into()),
+    }
+    Ok(())
+}
+fn state(s: &Session, page: usize) -> Value {
+    let p = &s.project;
+    let page = page.min(p.pages.len().saturating_sub(1));
+    let unit = p.effective_units_per_inch() / 72.;
+    let elements=p.pages[page].elements.iter().map(|e|{
+        let mut value=json!({"id":e.id.to_string(),"name":e.name,"x":e.x,"y":e.y,"width":e.width,"height":e.height,"rotation":e.rotation,"locked":e.locked,"visible":e.visible,"linked_style":e.style_id,"binding":e.binding});
+        match &e.kind{ElementKind::Text{content,font_family,font_size,color,bold,italic,underline,line_height,letter_spacing,..}=>{value["type"]=json!("text");value["content"]=json!(content);value["family"]=json!(family(*font_family));value["size"]=json!(*font_size/unit);value["color"]=json!(format!("#{:02x}{:02x}{:02x}",color[0],color[1],color[2]));value["bold"]=json!(bold);value["italic"]=json!(italic);value["underline"]=json!(underline);value["leading"]=json!(line_height);value["tracking"]=json!(letter_spacing);value["paragraph"]=json!(e.text_format);},ElementKind::Image{..}=>value["type"]=json!("image"),_=>value["type"]=json!("artwork")};value
+    }).collect::<Vec<_>>();
+    let fields=p.production.fields.iter().map(|(key,field)|json!({"key":key,"value":field.value,"required":field.required,"image":field.image})).collect::<Vec<_>>();
+    let mut fonts = FontFamily::all()
+        .iter()
+        .map(|f| json!({"id":family(*f),"name":f.label()}))
+        .collect::<Vec<_>>();
+    fonts.extend(
+        p.imported_fonts
+            .iter()
+            .map(|f| json!({"id":family(FontFamily::Imported(f.id)),"name":f.name})),
+    );
+    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some()})
+}
+fn preflight_value(project: &Project) -> Value {
+    let report = run_export_preflight(project, 300);
+    json!({"issues":report.issues.iter().map(|i|json!({"page_index":i.page_index,"element_id":i.element_id.to_string(),"element_name":i.element_name,"severity":format!("{:?}",i.severity),"category":i.category,"message":i.message})).collect::<Vec<_>>()})
+}
+fn query(path: &str, key: &str) -> Option<String> {
+    path.split_once('?')?.1.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == key).then(|| v.to_string())
+    })
+}
+fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
+    let base = req.path.split('?').next().unwrap_or("");
+    let page = query(&req.path, "page")
+        .unwrap_or("0".into())
+        .parse::<usize>()
+        .map_err(|_| "Invalid page")?;
+    if req.method == "GET" {
+        return match base {
+            "/api/state" => Ok(Response::value(state(s, page), s.revision)),
+            "/api/preview.svg" => {
+                let proof = production::resolve(&s.project, false)?;
+                let svg = exporter::export_project_page_to_svg(&proof, page, false)?;
+                Ok(Response::bytes(
+                    "image/svg+xml",
+                    svg.into_bytes(),
+                    s.revision,
+                ))
+            }
+            "/api/preflight" => Ok(Response::value(preflight_value(&s.project), s.revision)),
+            "/api/download.canvas" => {
+                let scratch = Scratch::new()?;
+                let path = scratch.0.join("design.canvas");
+                project_package::save(&s.project, &path)?;
+                let mut r = Response::bytes(
+                    "application/octet-stream",
+                    fs::read(path).map_err(|e| e.to_string())?,
+                    s.revision,
+                );
+                r.download = Some("design.canvas");
+                Ok(r)
+            }
+            "/api/download.pdf" => {
+                check_delivery(&s.project)?;
+                let bytes = model::pdf_export::export_project_to_pdf_bytes(
+                    &s.project,
+                    &PdfExportOptions::default(),
+                )?;
+                let mut r = Response::bytes("application/pdf", bytes, s.revision);
+                r.download = Some("design.pdf");
+                Ok(r)
+            }
+            "/api/download.png" => {
+                check_delivery(&s.project)?;
+                let image = exporter::render_project_page_at_dpi(&s.project, page, 150, false)?;
+                let mut bytes = Vec::new();
+                image
+                    .write_to(
+                        &mut std::io::Cursor::new(&mut bytes),
+                        image::ImageFormat::Png,
+                    )
+                    .map_err(|e| e.to_string())?;
+                let mut r = Response::bytes("image/png", bytes, s.revision);
+                r.download = Some("page.png");
+                Ok(r)
+            }
+            _ => Err("Route not found".into()),
+        };
+    }
+    if req.method != "POST" {
+        return Err("Use GET or POST".into());
+    }
+    let revision = req
+        .headers
+        .get("x-canvas-revision")
+        .and_then(|r| r.parse::<u64>().ok())
+        .ok_or("Missing document revision")?;
+    if revision != s.revision {
+        let mut r=Response::error(409,"This document changed in another tab. Refresh before editing; your pending input is still in the form.");
+        r.revision = s.revision;
+        return Ok(r);
+    }
+    match base {
+        "/api/command" => {
+            let value: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
+            let action = string(&value, "action")?;
+            if action == "undo" || action == "redo" {
+                s.travel(action == "redo")?;
+            } else if action == "template" {
+                let key = string(&value, "template")?;
+                if !templates::available_templates().iter().any(|t| t.id == key) {
+                    return Err("Unknown template".into());
+                }
+                s.commit(templates::build_template_project(key))?;
+            } else if action == "new" {
+                s.commit(Project::default())?;
+            } else {
+                let mut project = s.project.clone();
+                edit(&mut project, &value)?;
+                s.commit(project)?;
+            }
+        }
+        "/api/open" => {
+            let scratch = Scratch::new()?;
+            let path = scratch.0.join("upload.canvas");
+            fs::write(&path, &req.body).map_err(|e| e.to_string())?;
+            let mut project = load_project_json(&path)?;
+            project.recovery_origin_path = None;
+            s.commit(project)?;
+        }
+        "/api/font" => {
+            let font = imported_fonts::parse(req.body.clone())?;
+            let mut project = s.project.clone();
+            if !project.imported_fonts.iter().any(|f| f.id == font.id) {
+                project.imported_fonts.push(font);
+            }
+            s.commit(project)?;
+        }
+        "/api/photo" | "/api/image" | "/api/add-image" => {
+            if req.body.len() > 25_000_000 {
+                return Err("Image exceeds 25 MB".into());
+            }
+            let scratch = Scratch::new()?;
+            let path = scratch.0.join("uploaded-photo.png");
+            let reader = image::ImageReader::new(std::io::Cursor::new(&req.body))
+                .with_guessed_format()
+                .map_err(|e| e.to_string())?;
+            let (w, h) = reader.into_dimensions().map_err(|e| e.to_string())?;
+            if w > 18_000 || h > 18_000 || w as u64 * h as u64 > 100_000_000 {
+                return Err("Image dimensions exceed the safe limit".into());
+            }
+            image::load_from_memory(&req.body)
+                .map_err(|e| e.to_string())?
+                .save(&path)
+                .map_err(|e| e.to_string())?;
+            let mut project = s.project.clone();
+            if base == "/api/add-image" {
+                if page >= project.pages.len() {
+                    return Err("Page outside document".into());
+                }
+                let asset = model::asset_store::AssetStore::global().import_image_file(&path)?;
+                let stock = templates::SampleStockAsset {
+                    name: "Uploaded photo",
+                    subtitle: "Local photo",
+                    width: asset.width_px,
+                    height: asset.height_px,
+                    rgba: asset.decoded_rgba.into(),
+                };
+                let mut element =
+                    templates::make_stock_image_element(project.alloc_id(), &stock, 50., 100.);
+                let scale = ((project.width - 100.).max(30.) / w as f32)
+                    .min((project.height - 150.).max(30.) / h as f32)
+                    .min(300. / w as f32);
+                element.width = w as f32 * scale;
+                element.height = h as f32 * scale;
+                if let ElementKind::Image { mask, .. } = &mut element.kind {
+                    *mask = ImageMask::None;
+                }
+                project.pages[page].elements.push(element);
+            } else if base == "/api/photo" {
+                let key = query(&req.path, "key").ok_or("Missing photo field")?;
+                production::attach_image(
+                    project
+                        .production
+                        .fields
+                        .get_mut(&key)
+                        .ok_or("Photo field not found")?,
+                    &path,
+                )?;
+            } else {
+                let key = query(&req.path, "id").ok_or("Missing image identity")?;
+                let v = json!({"id":key});
+                let e = element_mut(&mut project, &v)?;
+                if !matches!(e.kind, ElementKind::Image { .. }) {
+                    return Err("Select an image layer".into());
+                }
+                model::import_layout::replace_element_image_from_path(e, &path)?;
+            }
+            s.commit(project)?;
+        }
+        _ => return Err("Route not found".into()),
+    }
+    Ok(Response::value(json!({"revision":s.revision}), s.revision))
+}
+fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Session>) {
+    let req = match request(stream, Some((host, token))) {
+        Ok(r) => r,
+        Err(e) => {
+            send(stream, Response::error(e.status, &e.message));
+            return;
+        }
+    };
+    if req.headers.get("host").map(String::as_str) != Some(host) {
+        send(stream, Response::error(403, "Invalid host"));
+        return;
+    }
+    if let Some(origin) = req.headers.get("origin") {
+        if origin != &format!("http://{host}") {
+            send(
+                stream,
+                Response::error(403, "Cross-origin editing is disabled"),
+            );
+            return;
+        }
+    }
+    if req.method == "GET" {
+        let static_file = match req.path.as_str() {
+            "/" => Some((
+                "text/html; charset=utf-8",
+                include_bytes!("../web/index.html").as_slice(),
+            )),
+            "/app.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_bytes!("../web/app.js").as_slice(),
+            )),
+            "/style.css" => Some((
+                "text/css; charset=utf-8",
+                include_bytes!("../web/style.css").as_slice(),
+            )),
+            _ => None,
+        };
+        if let Some((mime, bytes)) = static_file {
+            send(stream, Response::bytes(mime, bytes.into(), 0));
+            return;
+        }
+    }
+    if req.headers.get("x-canvas-token").map(String::as_str) != Some(token) {
+        send(
+            stream,
+            Response::error(
+                403,
+                "Open the private session link printed by Canvas Studio",
+            ),
+        );
+        return;
+    }
+    let response = match session.lock() {
+        Ok(mut s) => route(&req, &mut s).unwrap_or_else(|e| Response::error(422, &e)),
+        Err(_) => Response::error(
+            422,
+            "The session stopped after an internal error; restart to recover",
+        ),
+    };
+    send(stream, response);
+}
+pub fn run(port: u16, initial: Option<PathBuf>) -> Result<(), String> {
+    let listener = TcpListener::bind(("127.0.0.1", port))
+        .map_err(|e| format!("Cannot start browser editor: {e}"))?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let recovery =
+        application_data_dir().join(format!("canvas-studio/browser/recovery-{port}.canvas"));
+    if let Some(folder) = recovery.parent() {
+        fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(folder, fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    let project = if let Some(path) = initial {
+        load_project_json(&path)?
+    } else if recovery.is_file() {
+        load_project_json(&recovery)
+            .map_err(|e| format!("Browser recovery could not be read; original preserved: {e}"))?
+    } else {
+        Project::default()
+    };
+    validate_document(&project)?;
+    let mut random = [0u8; 32];
+    fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut random))
+        .map_err(|e| format!("Cannot create private session token: {e}"))?;
+    let token = random
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let host = format!("127.0.0.1:{port}");
+    let session = Arc::new(Mutex::new(Session {
+        project,
+        revision: 0,
+        undo: Vec::new(),
+        redo: Vec::new(),
+        recovery: Some(recovery),
+    }));
+    println!("Canvas Studio browser editor: http://{host}/#{token}\nKeep this local session link private. Ctrl+C stops the server. Download a .canvas copy to save a deliverable.");
+    let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    for stream in listener.incoming() {
+        let Ok(mut stream) = stream else {
+            continue;
+        };
+        use std::sync::atomic::Ordering;
+        if active.fetch_add(1, Ordering::SeqCst) >= 16 {
+            active.fetch_sub(1, Ordering::SeqCst);
+            continue;
+        }
+        let active = active.clone();
+        let session = session.clone();
+        let host = host.clone();
+        let token = token.clone();
+        std::thread::spawn(move || {
+            struct Active(Arc<std::sync::atomic::AtomicUsize>);
+            impl Drop for Active {
+                fn drop(&mut self) {
+                    self.0.fetch_sub(1, Ordering::SeqCst);
+                }
+            }
+            let _guard = Active(active);
+            handle(&mut stream, &host, &token, &session)
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn session() -> Session {
+        Session {
+            project: Project::default(),
+            revision: 0,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            recovery: None,
+        }
+    }
+    fn command(s: &mut Session, value: Value) -> Result<Response, String> {
+        let req = Request {
+            method: "POST".into(),
+            path: "/api/command".into(),
+            headers: HashMap::from([("x-canvas-revision".into(), s.revision.to_string())]),
+            body: serde_json::to_vec(&value).unwrap(),
+        };
+        route(&req, s)
+    }
+    #[test]
+    fn browser_edits_preserve_native_typography_and_undo_without_stale_overwrites() {
+        let mut s = session();
+        command(&mut s, json!({"action":"add_text","page":0})).unwrap();
+        let id = s.project.pages[0].elements[0].id.to_string();
+        command(&mut s,json!({"action":"text","id":id,"content":"Avery & Zoë\nA new chapter","size":22,"space_before":6,"inset_left":12})).unwrap();
+        command(&mut s,json!({"action":"emphasis","id":id,"start":8,"end":11,"property":"italic","value":true})).unwrap();
+        let snapshot = s.project.clone();
+        assert_eq!(snapshot.pages[0].elements[0].text_format.inset_left, 12.);
+        command(&mut s, json!({"action":"undo"})).unwrap();
+        assert!(s.project.pages[0].elements[0].text_format.runs.is_empty());
+        command(&mut s, json!({"action":"redo"})).unwrap();
+        assert!(s.project == snapshot);
+        let req = Request {
+            method: "POST".into(),
+            path: "/api/command".into(),
+            headers: HashMap::from([("x-canvas-revision".into(), "0".into())]),
+            body: br#"{"action":"title","value":"Stale"}"#.to_vec(),
+        };
+        assert_eq!(route(&req, &mut s).unwrap().status, 409);
+        assert!(s.project == snapshot);
+        let before = s.revision;
+        assert!(command(
+            &mut s,
+            json!({"action":"geometry","id":id,"x":0,"y":0,"width":-1,"height":50})
+        )
+        .is_err());
+        assert_eq!(s.revision, before);
+        assert!(s.project == snapshot);
+    }
+    #[test]
+    fn browser_portable_download_and_recovery_round_trip_photos_fonts_and_styles() {
+        let root = Scratch::new().unwrap();
+        let mut s = session();
+        s.recovery = Some(root.0.join("recovery.canvas"));
+        let mut p = templates::build_template_project("brand_logo");
+        let assets = templates::generate_builtin_stock_assets();
+        let image = templates::make_stock_image_element(p.alloc_id(), &assets[0], 40., 200.);
+        p.pages[0].elements.push(image);
+        let font =
+            imported_fonts::parse(include_bytes!("../assets/fonts/NotoSerif-Regular.ttf").to_vec())
+                .unwrap();
+        p.imported_fonts.push(font);
+        s.commit(p).unwrap();
+        let req = Request {
+            method: "GET".into(),
+            path: "/api/download.canvas".into(),
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        let response = route(&req, &mut s).unwrap();
+        let file = root.0.join("delivered.canvas");
+        fs::write(&file, response.body).unwrap();
+        let loaded = load_project_json(&file).unwrap();
+        assert_eq!(loaded.imported_fonts.len(), 1);
+        assert!(loaded.pages[0]
+            .elements
+            .iter()
+            .any(|e| matches!(&e.kind,ElementKind::Image{raw_rgba,..}if !raw_rgba.is_empty())));
+        assert_eq!(
+            load_project_json(&root.0.join("recovery.canvas"))
+                .unwrap()
+                .title,
+            s.project.title
+        );
+        let revision = s.revision;
+        s.recovery = Some(root.0.join("blocked/recovery.canvas"));
+        fs::write(root.0.join("blocked"), b"not a directory").unwrap();
+        assert!(command(&mut s, json!({"action":"title","value":"Must not commit"})).is_err());
+        assert_eq!(s.revision, revision);
+        assert_ne!(s.project.title, "Must not commit");
+    }
+    #[test]
+    fn browser_print_export_rejects_unfilled_fields_and_modified_puzzle_keys() {
+        let mut s = session();
+        s.project.production.fields.insert(
+            "name".into(),
+            production::DataField {
+                required: true,
+                ..Default::default()
+            },
+        );
+        let req = Request {
+            method: "GET".into(),
+            path: "/api/download.pdf".into(),
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(route(&req, &mut s).is_err());
+        s.project = Project::default();
+        puzzle_production::append_series(
+            &mut s.project,
+            &Default::default(),
+            &Default::default(),
+            1,
+            true,
+        )
+        .unwrap();
+        let letter = s.project.pages[0]
+            .elements
+            .iter_mut()
+            .find(|e| e.name == "Puzzle letter")
+            .unwrap();
+        if let ElementKind::Text { content, .. } = &mut letter.kind {
+            *content = "?".into();
+        }
+        assert!(route(&req, &mut s).is_err());
+    }
+    #[test]
+    fn browser_photo_upload_handles_jpeg_and_does_not_change_a_locked_frame() {
+        let mut s = session();
+        let assets = templates::generate_builtin_stock_assets();
+        let e = templates::make_stock_image_element(s.project.alloc_id(), &assets[0], 20., 200.);
+        let id = e.id;
+        s.project.pages[0].elements.push(e);
+        let photo = image::RgbImage::from_pixel(28, 18, image::Rgb([190, 65, 100]));
+        let mut body = Vec::new();
+        photo
+            .write_to(
+                &mut std::io::Cursor::new(&mut body),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        let mut req = Request {
+            method: "POST".into(),
+            path: format!("/api/image?id={id}"),
+            headers: HashMap::from([("x-canvas-revision".into(), "0".into())]),
+            body,
+        };
+        route(&req, &mut s).unwrap();
+        assert!(matches!(
+            &s.project.pages[0].elements[0].kind,
+            ElementKind::Image {
+                width_px: 28,
+                height_px: 18,
+                ..
+            }
+        ));
+        s.project.pages[0].elements[0].locked = true;
+        req.headers
+            .insert("x-canvas-revision".into(), s.revision.to_string());
+        assert!(route(&req, &mut s).is_err());
+    }
+    #[test]
+    fn loopback_http_requires_a_valid_host_origin_and_session_token() {
+        fn call(host: &str, token: bool, origin: Option<&str>) -> String {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let address = listener.local_addr().unwrap();
+            let expected = address.to_string();
+            let thread = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                handle(&mut stream, &expected, "test-token", &Mutex::new(session()));
+            });
+            let actual_host = if host == "valid" {
+                address.to_string()
+            } else {
+                host.to_string()
+            };
+            let extra = format!(
+                "{}{}",
+                if token {
+                    "X-Canvas-Token: test-token\r\n"
+                } else {
+                    ""
+                },
+                origin
+                    .map(|o| format!("Origin: {o}\r\n"))
+                    .unwrap_or_default()
+            );
+            let mut client = TcpStream::connect(address).unwrap();
+            client
+                .write_all(
+                    format!("GET /api/state HTTP/1.1\r\nHost: {actual_host}\r\n{extra}\r\n")
+                        .as_bytes(),
+                )
+                .unwrap();
+            let mut response = String::new();
+            client.read_to_string(&mut response).unwrap();
+            thread.join().unwrap();
+            response
+        }
+        assert!(call("valid", true, None).starts_with("HTTP/1.1 200"));
+        assert!(call("valid", false, None).starts_with("HTTP/1.1 403"));
+        assert!(call("attacker.invalid", true, None).starts_with("HTTP/1.1 403"));
+        assert!(call("valid", true, Some("https://attacker.invalid")).starts_with("HTTP/1.1 403"));
+    }
+    #[test]
+    fn invalid_documents_and_unauthorized_uploads_do_not_damage_the_session() {
+        let mut s = session();
+        let mut invalid = Project::default();
+        invalid.pages.clear();
+        assert!(s.commit(invalid).is_err());
+        assert_eq!(s.revision, 0);
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let host = address.to_string();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let error = match request(&mut stream, Some((&host, "secret"))) {
+                Err(error) => error,
+                Ok(_) => panic!("Unauthorized upload accepted"),
+            };
+            assert_eq!(error.status, 403);
+            send(&mut stream, Response::error(error.status, &error.message));
+        });
+        let mut client = TcpStream::connect(address).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        client.write_all(format!("POST /api/open HTTP/1.1\r\nHost: {address}\r\nContent-Length: 100000000\r\n\r\n").as_bytes()).unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 403"));
+        thread.join().unwrap();
+    }
+    #[test]
+    fn request_parser_rejects_ambiguous_or_oversized_requests() {
+        fn attempt(raw: &'static [u8]) -> bool {
+            let l = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let a = l.local_addr().unwrap();
+            let t = std::thread::spawn(move || {
+                let (mut s, _) = l.accept().unwrap();
+                request(&mut s, None).is_err()
+            });
+            let mut s = TcpStream::connect(a).unwrap();
+            s.write_all(raw).unwrap();
+            s.shutdown(std::net::Shutdown::Write).unwrap();
+            t.join().unwrap()
+        }
+        assert!(attempt(
+            b"POST / HTTP/1.1\r\nContent-Length: 0\r\nContent-Length: 0\r\n\r\n"
+        ));
+        assert!(attempt(
+            b"POST / HTTP/1.1\r\nContent-Length: 134217729\r\n\r\n"
+        ));
+        assert!(attempt(
+            b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n"
+        ));
+    }
+}

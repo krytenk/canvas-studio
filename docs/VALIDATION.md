@@ -1,5 +1,28 @@
 # Canvas Studio validation
 
+## 1.9.0 browser/native integration
+
+73 release checks pass. New coverage includes browser edit/undo/revision semantics,
+portable font/image delivery, recovery failure preservation, JPEG replacement,
+required-field and modified-puzzle rejection, invalid documents, HTTP parsing,
+host/origin/token checks and rejecting unauthorized uploads before their bodies.
+
+Isolated Chrome and bundled Chromium workflows personalise all five pages of a
+collection, replace a linked JPEG photo, add text, change paragraph/character
+styling, import a font, rename a page, undo/redo, download PDF/editable files, reopen
+the delivered project and insert another photo. PDF text extraction verifies the
+shared name on all five pages and Unicode text; the native executable opens the
+delivered and recovery projects. Restarting the server on the same port restores
+the document with a new session token. The 700 px layout has no horizontal overflow,
+and no page-script errors were reported. Unapplied forms survive in-app refresh
+and block stale downloads. Screenshots are visually reviewed locally.
+
+The repeatable native-window driver passes at 1024×680 on isolated Xvfb: title
+editing/save/reopen, undo/redo, tool scrolling, Book/Next and the export dialog.
+GitHub CI now repeats both UI workflows and uploads their proofs. Physical printing,
+all desktop/browser platforms, public multi-user hosting and full-resolution book
+stress acceptance are not established by these checks.
+
 ## 1.8.1 native desktop validation
 
 Launched the real egui desktop executable on the Wayland desktop through X11.

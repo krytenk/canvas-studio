@@ -4,12 +4,23 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.8.1**, with imported fonts, rich paragraphs, portable
-projects, linked collections/CSV production, book organisation and checked word searches.
+Current development: **1.9.0**, with imported fonts, rich paragraphs, portable
+projects, linked collections/CSV production, books, checked word searches and local browser editing.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
 the [practical workflow guide](docs/PRINT-STUDIO-GUIDE.md).
 
 ![A4 example layout exported by Canvas Studio](docs/example-layout.png)
+
+## Browser editing
+
+Run `./run-browser.sh` or `./canvas-studio --serve-browser` and open the private
+local URL printed in the terminal. Add `--open /path/to/design.canvas` to start
+with a portable project. Personalise fields, edit text/photos/layout and download
+native editable files or print outputs. No paid service or Node runtime is needed.
+
+This is a local browser editor backed by the desktop engine; it is not a hosted
+multi-user customer service. See the [browser guide](docs/BROWSER-EDITOR.md) for
+supported controls, recovery, delivery formats and limits.
 
 ## Run the app
 
