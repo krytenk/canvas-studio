@@ -14,3 +14,10 @@ dependencies through the supplied setup helper. They retain their own package
 licenses/notices; their code and Chromium/Node/FFmpeg are not embedded in the
 Canvas Studio executable or the Linux archive. Generated source kits carry the
 Noto font license when native SVG artwork embeds these fonts.
+
+Product studio embeds the unmodified Three.js 0.187.0 `three.module.js` and
+`three.core.js` builds. Copyright © 2010–2026 Three.js authors. The MIT license
+and copyright notice are preserved in [web/vendor/THREE-LICENSE.txt](web/vendor/THREE-LICENSE.txt),
+in the Linux distribution, and in generated product-scene source kits.
+The renderer uses local code and native cover textures; no stock meshes or
+third-party product artwork are included in the original mockup demonstration.
