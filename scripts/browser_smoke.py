@@ -113,6 +113,7 @@ def run(binary,chrome):
             fresh=json.load(api('/api/state'))
             api('/api/command',{'action':'title','value':'Live agent campaign'},fresh['revision'],actor='mcp').read()
             page.wait_for_function("() => state.title==='Live agent campaign'")
+            page.get_by_role('tab',name='Fields',exact=True).click()
             page.get_by_label('guest_name',exact=True).fill('Keep my draft')
             fresh=json.load(api('/api/state'))
             api('/api/command',{'action':'title','value':'Second agent update'},fresh['revision'],actor='mcp').read()
