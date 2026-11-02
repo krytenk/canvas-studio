@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def run(binary,xvfb):
  qa=ROOT/'qa/native-mockups';qa.mkdir(parents=True,exist_ok=True)
  file=qa/'native.canvas';shutil.copy2(ROOT/'qa/mockups/workspace/product.canvas',file)
- env={**os.environ,'DISPLAY':':95','LIBGL_ALWAYS_SOFTWARE':'1','XDG_SESSION_TYPE':'x11','WINIT_X11_SCALE_FACTOR':'1','XDG_DATA_HOME':str(qa/'data')};env.pop('WAYLAND_DISPLAY',None)
+ env={**os.environ,'DISPLAY':':95','LIBGL_ALWAYS_SOFTWARE':'1','XDG_SESSION_TYPE':'x11','WINIT_X11_SCALE_FACTOR':'1','XDG_DATA_HOME':str(qa/'data'),'CANVAS_STUDIO_HYPERFRAMES':str(ROOT/'tools/hyperframes/node_modules/hyperframes/bin/hyperframes.mjs')};env.pop('WAYLAND_DISPLAY',None)
  log=(qa/'native.log').open('wb');server=subprocess.Popen([xvfb,':95','-screen','0','1440x1000x24','-nolisten','tcp','-noreset'],stdout=log,stderr=subprocess.STDOUT);app=None
  try:
   for _ in range(40):
