@@ -1,5 +1,21 @@
 # Canvas Studio validation
 
+## 1.18.0 multiple subject references
+
+96 local Rust tests pass, including private named-set reuse across documents,
+ordered-image integrity, tamper rejection and invalid/duplicate reference IDs.
+31 provider-independent Python checks cover real subject-reference argument
+shape, FP32 VACE decoder, complete portable input packs, model discovery,
+single-reference compatibility and incomplete-receipt rejection. Browser/MCP
+acceptance prepares actual one- and two-image ZIPs, reorders views, saves/reloads
+a named set and rejects silent truncation when switching to a single-image recipe.
+Private-session/search regressions pass with no page errors. Native UI checks
+run on GitHub's isolated Xvfb environment; Xvfb is not installed on the local host.
+
+Live Kaggle model execution is separate from the offline checks; see
+[Kaggle GPU acceptance](KAGGLE-GPU-ACCEPTANCE.md). Reference conditioning is not a
+face-identity guarantee or a quality benchmark against larger models.
+
 ## 1.14.0 deterministic motion
 
 87 local Rust checks pass. New tests cover split/move/trim animation clocks,

@@ -3,8 +3,8 @@ No remote Python, pickle weights, safety-checker removal or arbitrary shell comm
 """
 import hashlib,json,os,re,shutil,time
 from pathlib import Path
-SUPPORTED={'StableDiffusionXLPipeline','StableDiffusionPipeline','Flux2KleinPipeline','Krea2Pipeline','FluxPipeline','ZImagePipeline','QwenImagePipeline','QwenImage21Pipeline','WanPipeline','WanImageToVideoPipeline','LTX2Pipeline','LTXPipeline','LTXImageToVideoPipeline'}
-REFERENCE_PIPELINES={'Flux2KleinPipeline','QwenImage21Pipeline','WanImageToVideoPipeline','LTXImageToVideoPipeline'}
+SUPPORTED={'StableDiffusionXLPipeline','StableDiffusionPipeline','Flux2KleinPipeline','Krea2Pipeline','FluxPipeline','ZImagePipeline','QwenImagePipeline','QwenImage21Pipeline','WanPipeline','WanImageToVideoPipeline','LTX2Pipeline','LTXPipeline','LTXImageToVideoPipeline','WanVACEPipeline'}
+REFERENCE_PIPELINES={'Flux2KleinPipeline','QwenImage21Pipeline','WanImageToVideoPipeline','LTXImageToVideoPipeline','WanVACEPipeline'}
 REPO=re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$')
 def validate(s):
  m=s['model']
@@ -30,10 +30,13 @@ def validate(s):
  if not 2<=float(s.get('download_limit_gb',20))<=100:raise ValueError('Set a 2–100 GB weight-download limit')
  for a in s.get('adapters',[]):
   if a.get('family')!=m['pipeline'] or not REPO.fullmatch(a.get('repository','')) or not re.fullmatch('[a-f0-9]{40}',a.get('revision','')) or not a.get('weight_name','').endswith('.safetensors') or '/' in a['weight_name']:raise ValueError('Choose a compatible pinned safetensors adapter')
- if s.get('reference') and m['pipeline'] not in REFERENCE_PIPELINES:raise ValueError('This recipe is text-only; choose an image-editing/image-to-video recipe for references')
- if m.get('reference_required') and not s.get('reference'):raise ValueError('Choose a reference image or the current page before image-to-video generation')
+ if reference_items(s) and m['pipeline'] not in REFERENCE_PIPELINES:raise ValueError('This recipe is text-only; choose an image-editing/image-to-video recipe for references')
+ if m.get('reference_required') and not reference_items(s):raise ValueError('Choose a reference image or the current page before image-to-video generation')
  if s.get('reference_fit','contain') not in ('contain','cover'):raise ValueError('Choose contain or cover for reference framing')
  if m['task']=='video' and m.get('frame_multiple') and (s['frames']-1)%m['frame_multiple']:raise ValueError('This model needs video frames in the form '+str(m['frame_multiple'])+'n+1')
+ if len(reference_items(s))>m.get('reference_max',1):raise ValueError('This recipe accepts at most '+str(m.get('reference_max',1))+' reference image(s); choose a multi-reference recipe')
+ if len({h for _,h in reference_items(s)})!=len(reference_items(s)):raise ValueError('Choose distinct reference images, not duplicate files')
+ if not 0.5<=float(s.get('reference_strength',1))<=2:raise ValueError('Reference influence must be between 0.5 and 2')
  return s
 
 def select_files(siblings,precision):
@@ -97,10 +100,29 @@ def download_civitai(model,cache,limit,progress):
 
 def component_overrides(model,snapshot,selected,precision,torch,diffusers):
  """Wan's decoder needs FP32 even when the denoiser uses FP16 on a T4."""
- if model['pipeline'] not in ('WanPipeline','WanImageToVideoPipeline'):return {}
+ if model['pipeline'] not in ('WanPipeline','WanImageToVideoPipeline','WanVACEPipeline'):return {}
  options=dict(subfolder='vae',torch_dtype=torch.float32,local_files_only=True,use_safetensors=True)
  if any(f.rfilename.startswith('vae/') and '.'+precision+'.safetensors' in f.rfilename for f in selected):options['variant']=precision
  return {'vae':diffusers.AutoencoderKLWan.from_pretrained(snapshot,**options)}
+
+def reference_items(s):
+ items=s.get('references')
+ if items is not None:
+  if not isinstance(items,list) or not 1<=len(items)<=4:raise ValueError('Choose one to four reference images')
+  for item in items:
+   if not isinstance(item,dict) or not isinstance(item.get('path'),str) or not re.fullmatch('[a-f0-9]{64}',item.get('sha256','')):raise ValueError('Invalid reference image descriptor')
+  return [(item['path'],item['sha256']) for item in items]
+ return [(s['reference'],s.get('reference_sha256',''))] if s.get('reference') else []
+def reference_fingerprint(s):
+ return hashlib.sha256(json.dumps([h for _,h in reference_items(s)],separators=(',',':')).encode()).hexdigest()
+def reference_options(model,images):
+ if not images:return {}
+ if model['pipeline']=='WanVACEPipeline':return {'reference_images':[images]}
+ if len(images)!=1:raise ValueError('This recipe does not support a subject reference set')
+ return {'image':images[0]}
+def prepare_references(s):
+ prepared=[prepare_reference({**s,'reference':path,'reference_sha256':digest}) for path,digest in reference_items(s)]
+ return [p[0] for p in prepared],[p[1] for p in prepared]
 
 def prepare_reference(s):
  """Return the exact first-frame pixels and provenance; bounded before decoding."""
@@ -126,7 +148,7 @@ def generator_device(model,cuda):
 
 def run(s,output_dir,cache_dir,progress=lambda v:None):
  validate(s)
- reference_image,reference_info=prepare_reference(s) if s.get('reference') else (None,None)
+ reference_images,reference_infos=prepare_references(s)
  import torch
  from huggingface_hub import HfApi,snapshot_download
  import diffusers
@@ -173,7 +195,8 @@ def run(s,output_dir,cache_dir,progress=lambda v:None):
  import inspect
  params=inspect.signature(pipe.__call__).parameters
  if s.get('negative_prompt') and 'negative_prompt' in params:options['negative_prompt']=s['negative_prompt']
- if reference_image is not None:options['image']=reference_image
+ options.update(reference_options(model,reference_images))
+ if model['pipeline']=='WanVACEPipeline':options['conditioning_scale']=float(s.get('reference_strength',1))
  if model['task']=='video':
   options['num_frames']=s['frames']
   if 'output_type' in params:options['output_type']='np'
@@ -212,5 +235,5 @@ def run(s,output_dir,cache_dir,progress=lambda v:None):
  for name in ('diffusers','transformers','peft','accelerate','bitsandbytes'):
   try:versions[name]=importlib.metadata.version(name)
   except importlib.metadata.PackageNotFoundError:pass
- receipt={'schema':1,'model':model,'settings':{k:v for k,v in s.items() if k not in ('model','reference')},'reference_used':bool(s.get('reference')),'reference':reference_info,'elapsed_seconds':round(time.monotonic()-began,2),'device':torch.cuda.get_device_name(0) if cuda else 'CPU','generator_device':str(options['generator'].device),'vae_precision':str(pipe.vae.dtype) if hasattr(pipe,'vae') else None,'packages':versions,'content_check':content_check,'diffusers_version':diffusers.__version__,'torch_version':torch.__version__,'output_sha256':hashlib.sha256(target.read_bytes()).hexdigest()}
+ receipt={'schema':1,'model':model,'settings':{k:v for k,v in s.items() if k not in ('model','reference','references')},'reference_used':bool(reference_images),'reference':reference_infos[0] if reference_infos else None,'references':reference_infos,'reference_set_sha256':reference_fingerprint(s) if reference_infos else None,'elapsed_seconds':round(time.monotonic()-began,2),'device':torch.cuda.get_device_name(0) if cuda else 'CPU','generator_device':str(options['generator'].device),'vae_precision':str(pipe.vae.dtype) if hasattr(pipe,'vae') else None,'packages':versions,'content_check':content_check,'diffusers_version':diffusers.__version__,'torch_version':torch.__version__,'output_sha256':hashlib.sha256(target.read_bytes()).hexdigest()}
  (output/'receipt.json').write_text(json.dumps(receipt,indent=2));return target,receipt

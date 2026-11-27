@@ -185,6 +185,149 @@ pub(crate) fn reference_bytes(document: &str, id: &str) -> Result<Vec<u8>, Strin
     }
     fs::read(path).map_err(|e| e.to_string())
 }
+fn reference_ids(value: &Value) -> Result<Vec<String>, String> {
+    let values = value
+        .as_array()
+        .ok_or("Choose one to four reference images")?;
+    if values.is_empty() || values.len() > 4 {
+        return Err("Choose one to four reference images".into());
+    }
+    let mut ids = Vec::new();
+    for value in values {
+        let id = value.as_str().ok_or("Invalid reference ID")?;
+        if id.len() != 64
+            || !id.bytes().all(|b| b.is_ascii_hexdigit())
+            || ids.iter().any(|v| v == id)
+        {
+            return Err("Choose distinct valid reference images".into());
+        }
+        ids.push(id.to_string());
+    }
+    Ok(ids)
+}
+fn private_dir(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+fn private_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    fs::write(path, bytes).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+fn reference_set_dir(id: &str) -> Result<PathBuf, String> {
+    if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("Invalid reference set ID".into());
+    }
+    Ok(root().join("reference-sets").join(id))
+}
+pub(crate) fn reference_sets() -> Value {
+    let mut sets = Vec::new();
+    if let Ok(dirs) = fs::read_dir(root().join("reference-sets")) {
+        for dir in dirs.flatten() {
+            let id = dir.file_name().to_string_lossy().into_owned();
+            if let Ok(folder) = reference_set_dir(&id) {
+                if let Ok(bytes) = fs::read(folder.join("manifest.json")) {
+                    if let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) {
+                        value["id"] = json!(id);
+                        sets.push(value);
+                    }
+                }
+            }
+        }
+    }
+    sets.sort_by_key(|v| v["name"].as_str().unwrap_or("").to_lowercase());
+    json!({"sets":sets})
+}
+pub(crate) fn reference_set_action(document: &str, value: &Value) -> Result<Value, String> {
+    match value["operation"].as_str().unwrap_or("") {
+        "save" => {
+            let name = value["name"].as_str().unwrap_or("").trim();
+            if name.is_empty() || name.chars().count() > 80 {
+                return Err("Name this reference set using 1–80 characters".into());
+            }
+            let ids = reference_ids(&value["reference_ids"])?;
+            let bytes = ids
+                .iter()
+                .map(|id| reference_bytes(document, id))
+                .collect::<Result<Vec<_>, _>>()?;
+            let manifest = json!({"name":name,"reference_ids":ids,"count":ids.len()});
+            let encoded = serde_json::to_vec(&manifest).unwrap();
+            private_dir(&root())?;
+            let library = root().join("reference-sets");
+            private_dir(&library)?;
+            let stage = library.join(format!("stage-{}", generate_document_id()));
+            private_dir(&stage)?;
+            let result = (|| {
+                private_file(&stage.join("manifest.json"), &encoded)?;
+                let id = crate::media_store::digest(&stage.join("manifest.json"))?;
+                let destination = reference_set_dir(&id)?;
+                if !destination.exists() {
+                    if reference_sets()["sets"]
+                        .as_array()
+                        .is_some_and(|v| v.len() >= 100)
+                    {
+                        return Err("Keep at most 100 saved reference sets".into());
+                    }
+                    for (hash, data) in ids.iter().zip(bytes) {
+                        private_file(&stage.join(format!("{hash}.png")), &data)?;
+                    }
+                    fs::rename(&stage, &destination).map_err(|e| e.to_string())?;
+                }
+                Ok(json!({"id":id,"name":name,"count":ids.len(),"reference_ids":ids}))
+            })();
+            let _ = fs::remove_dir_all(stage);
+            result
+        }
+        "load" => {
+            let id = value["id"].as_str().ok_or("Choose a saved reference set")?;
+            let folder = reference_set_dir(id)?;
+            let manifest = folder.join("manifest.json");
+            if crate::media_store::digest(&manifest)? != id {
+                return Err("Saved reference set metadata changed".into());
+            }
+            let set: Value =
+                serde_json::from_slice(&fs::read(manifest).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            let ids = reference_ids(&set["reference_ids"])?;
+            let mut images = Vec::new();
+            for hash in &ids {
+                let file = folder.join(format!("{hash}.png"));
+                if fs::metadata(&file).map_err(|e| e.to_string())?.len() > 25_000_000
+                    || crate::media_store::digest(&file)? != *hash
+                {
+                    return Err("Saved reference image failed its integrity check".into());
+                }
+                images.push((hash, fs::read(&file).map_err(|e| e.to_string())?));
+            }
+            private_dir(&root())?;
+            private_dir(&root().join("references"))?;
+            let active = reference_dir(document)?;
+            private_dir(&active)?;
+            let mut refs = Vec::new();
+            for (hash, bytes) in images {
+                let dimensions = image::ImageReader::new(std::io::Cursor::new(&bytes))
+                    .with_guessed_format()
+                    .map_err(|e| e.to_string())?
+                    .into_dimensions()
+                    .map_err(|e| e.to_string())?;
+                private_file(&active.join(format!("{hash}.png")), &bytes)?;
+                refs.push(json!({"id":hash,"width":dimensions.0,"height":dimensions.1}));
+            }
+            Ok(json!({"id":id,"name":set["name"],"references":refs}))
+        }
+        _ => Err("Choose save or load for a reference set".into()),
+    }
+}
+
 #[cfg(test)]
 mod reference_tests {
     use super::*;
@@ -226,6 +369,95 @@ mod reference_tests {
         fs::remove_dir_all(folder).unwrap();
     }
     #[test]
+    fn named_reference_set_is_ordered_reusable_and_rejects_tampering() {
+        let original = generate_document_id();
+        let fresh = generate_document_id();
+        let mut ids = Vec::new();
+        for size in [24, 32] {
+            let mut png = std::io::Cursor::new(Vec::new());
+            image::DynamicImage::new_rgb8(size, 32)
+                .write_to(&mut png, image::ImageFormat::Png)
+                .unwrap();
+            ids.push(
+                upload_reference(&original, png.get_ref()).unwrap()["id"]
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+            );
+        }
+        let request =
+            json!({"operation":"save","name":format!("Test {}",original),"reference_ids":ids});
+        let set = reference_set_action(&original, &request).unwrap();
+        assert_eq!(set, reference_set_action(&original, &request).unwrap());
+        assert!(reference_bytes(&fresh, &ids[0]).is_err());
+        let id = set["id"].as_str().unwrap();
+        let load = json!({"operation":"load","id":id});
+        let loaded = reference_set_action(&fresh, &load).unwrap();
+        assert_eq!(
+            loaded["references"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ids.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        for hash in &ids {
+            assert_eq!(
+                reference_bytes(&fresh, hash).unwrap(),
+                reference_bytes(&original, hash).unwrap()
+            );
+        }
+        let folder = reference_set_dir(id).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(folder.join("manifest.json"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+            assert_eq!(
+                fs::metadata(&folder).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+        fs::write(folder.join(format!("{}.png", ids[1])), b"tampered").unwrap();
+        assert!(reference_set_action(&generate_document_id(), &load).is_err());
+        fs::remove_dir_all(folder).unwrap();
+        fs::remove_dir_all(reference_dir(&original).unwrap()).unwrap();
+        fs::remove_dir_all(reference_dir(&fresh).unwrap()).unwrap();
+    }
+    #[test]
+    fn reference_set_rejects_invalid_and_duplicate_ids_before_storage() {
+        let document = generate_document_id();
+        for values in [
+            json!([]),
+            json!(["../escape"]),
+            json!(["a".repeat(64), "a".repeat(64)]),
+            json!([
+                "a".repeat(64),
+                "b".repeat(64),
+                "c".repeat(64),
+                "d".repeat(64),
+                "e".repeat(64)
+            ]),
+        ] {
+            assert!(reference_set_action(
+                &document,
+                &json!({"operation":"save","name":"Rejected","reference_ids":values})
+            )
+            .is_err());
+        }
+        assert!(
+            reference_set_action(&document, &json!({"operation":"load","id":"../escape"})).is_err()
+        );
+        assert!(!reference_dir(&document).unwrap().exists());
+    }
+    #[test]
     fn rejected_reference_never_creates_a_stored_input() {
         let document = generate_document_id();
         assert!(upload_reference(&document, b"not an image").is_err());
@@ -257,6 +489,8 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         "timeout",
         "reference_page",
         "reference_id",
+        "reference_ids",
+        "reference_strength",
         "reference_fit",
         "adapter",
         "provider",
@@ -295,13 +529,28 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         return Err("Unsupported generation operation".into());
     }
     let _ = python()?;
-    if value.get("reference_id").is_some() && value.get("reference_page").is_some() {
-        return Err("Choose one reference source: uploaded image or current page".into());
+    if ["reference_id", "reference_ids", "reference_page"]
+        .iter()
+        .filter(|k| value.get(**k).is_some())
+        .count()
+        > 1
+    {
+        return Err("Choose one reference source: uploaded images or current page".into());
     }
     let reference = value
         .get("reference_id")
         .map(|id| reference_bytes(&project.document_id, id.as_str().unwrap_or("")))
         .transpose()?;
+    let references = if let Some(ids) = value.get("reference_ids") {
+        Some(
+            reference_ids(ids)?
+                .iter()
+                .map(|id| reference_bytes(&project.document_id, id))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    } else {
+        None
+    };
     let mut task = catalog()["models"]
         .as_array()
         .unwrap()
@@ -345,6 +594,15 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
             let path = folder.join("reference.png");
             fs::write(&path, bytes).map_err(|e| e.to_string())?;
             value["reference"] = json!(path);
+        }
+        if let Some(images) = references {
+            let mut paths = Vec::new();
+            for (index, bytes) in images.iter().enumerate() {
+                let path = folder.join(format!("reference-{:02}.png", index + 1));
+                fs::write(&path, bytes).map_err(|e| e.to_string())?;
+                paths.push(path);
+            }
+            value["references"] = json!(paths);
         }
         if let Some(page) = value["reference_page"].as_u64() {
             let bytes = crate::studio_catalog::thumbnail(&snapshot, page as usize, 1600)?;

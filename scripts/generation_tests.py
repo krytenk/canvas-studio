@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'generation'
 import studio_ai as ai
 REAL_PREFLIGHT=ai.preflight
 REAL_REFERENCE_DATASET=ai.reference_dataset
-from studio_inference import validate,select_files,component_overrides,prepare_reference,generator_device
+from studio_inference import validate,select_files,component_overrides,prepare_reference,generator_device,reference_items,reference_fingerprint,reference_options,prepare_references
 class GenerationTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.folder=Path(self.temp.name);self.env=patch.dict(os.environ,{'XDG_DATA_HOME':str(self.folder/'data')});self.env.start()
@@ -29,6 +29,50 @@ class GenerationTests(unittest.TestCase):
      reference=self.folder/'first-frame.png';reference.write_bytes(b'fixture');extra['reference']=str(reference)
     s=ai.spec({**self.request,'model_id':model['id'],'steps':model['steps'],'guidance':model['guidance'],'use':'research','license_acknowledged':True,**extra})
     self.assertEqual(s['model']['id'],model['id'])
+ def test_multi_reference_uses_one_video_batch_all_images_and_fp32_decoder(self):
+  images=[object(),object()];options=reference_options({'pipeline':'WanVACEPipeline'},images)
+  self.assertEqual(len(options['reference_images']),1);self.assertEqual(options['reference_images'][0],images)
+  with self.assertRaises(ValueError):reference_options({'pipeline':'LTXImageToVideoPipeline'},images)
+  loader=MagicMock();kwargs=component_overrides({'pipeline':'WanVACEPipeline'},'/snapshot',[],'bf16',SimpleNamespace(float32='FP32'),SimpleNamespace(AutoencoderKLWan=SimpleNamespace(from_pretrained=loader)))
+  self.assertIn('vae',kwargs);self.assertEqual(loader.call_args.kwargs['torch_dtype'],'FP32')
+ def test_multi_reference_pack_is_complete_ordered_and_private(self):
+  from PIL import Image
+  refs=[]
+  for index,color in enumerate(['red','blue']):
+   path=self.folder/('ref'+str(index)+'.png');Image.new('RGB',(96,128),color).save(path);refs.append(str(path))
+  request={'model_id':'Wan-AI/Wan2.1-VACE-1.3B-diffusers','prompt':'A single adult creator turns to camera','references':refs,'document_id':'test-document'}
+  s=ai.spec(request);images,info=prepare_references(s);self.assertEqual(len(images),2);self.assertEqual(len(info),2)
+  self.assertEqual((s['frames'],s['fps'],s['steps']),(17,8,20));self.assertNotEqual(reference_fingerprint(s),reference_fingerprint(ai.spec({**request,'references':refs[::-1]})))
+  job=self.job();ai.prepare(request,job)
+  with zipfile.ZipFile(job/'motion-source.zip') as z:
+   spec=json.loads(z.read('manifest.json'))['spec'];self.assertEqual(len(spec['references']),2)
+   for i,(_,digest) in enumerate(reference_items(s)):
+    name='reference-'+str(i+1).zfill(2)+'.png';self.assertEqual(hashlib.sha256(z.read(name)).hexdigest(),digest)
+   self.assertLess(len(z.read('inference.ipynb')),900000)
+  with self.assertRaises(ValueError):ai.spec({**request,'references':[refs[0],refs[0]]})
+  with self.assertRaises(ValueError):ai.spec({**request,'references':refs*3})
+  with self.assertRaises(ValueError):ai.spec({**request,'model_id':'Lightricks/LTX-Video-0.9.5'})
+  with self.assertRaises(ValueError):ai.spec({**request,'reference_strength':2.1})
+ def test_incomplete_multi_reference_receipt_cannot_be_imported(self):
+  paths=[]
+  for index in range(2):
+   p=self.folder/('input'+str(index)+'.png');p.write_bytes(bytes([index]));paths.append(str(p))
+  request={'model_id':'Wan-AI/Wan2.1-VACE-1.3B-diffusers','prompt':'One woman smiles','references':paths,'document_id':'test-document'}
+  ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'})
+  with patch.object(ai,'cli',return_value='Kernel version 1 successfully pushed. Check https://www.kaggle.com/code/studio-test/multi-proof'):result=ai.submit(request,self.job())
+  spec=ai.spec(request);hashes=[h for _,h in reference_items(spec)]
+  receipt={'model':spec['model'],'output_sha256':hashlib.sha256(b'output').hexdigest(),'reference_used':True,'references':[{'sha256':h} for h in hashes],'reference_set_sha256':reference_fingerprint(spec)}
+  def cli(args,*a):
+   if args[1]=='status':return 'complete'
+   dest=Path(args[args.index('-p')+1]);(dest/'output.mp4').write_bytes(b'output');(dest/'receipt.json').write_text(json.dumps(current));return 'downloaded'
+  variants=[{**receipt,'references':receipt['references'][:1]},{**receipt,'references':receipt['references'][::-1]},{**receipt,'reference_set_sha256':'0'*64},{**receipt,'reference_used':False}]
+  for index,current in enumerate(variants):
+   folder=self.job('bad-receipt-'+str(index))
+   with patch.object(ai,'cli',side_effect=cli),self.assertRaisesRegex(ValueError,'complete reference set'):ai.remote_download({'run_id':result['run_id'],'document_id':'test-document'},folder)
+   self.assertFalse((folder/'movie.mp4').exists())
+  current=receipt;folder=self.job('valid-receipt')
+  with patch.object(ai,'cli',side_effect=cli):ai.remote_download({'run_id':result['run_id'],'document_id':'test-document'},folder)
+  self.assertEqual((folder/'movie.mp4').read_bytes(),b'output')
  def test_ltx_decode_generator_matches_execution_device_without_changing_verified_recipes(self):
   self.assertEqual(generator_device({'pipeline':'LTXImageToVideoPipeline'},True),'cuda')
   self.assertEqual(generator_device({'pipeline':'LTXPipeline'},True),'cuda')
@@ -70,7 +114,7 @@ class GenerationTests(unittest.TestCase):
   def cli(args,*a):
    if args[1]=='status':return 'complete'
    dest=Path(args[args.index('-p')+1]);(dest/'output.mp4').write_bytes(b'output');(dest/'receipt.json').write_text(json.dumps({'model':model,'output_sha256':hashlib.sha256(b'output').hexdigest(),'reference_used':True,'reference':{'sha256':'0'*64}}));return 'downloaded'
-  with patch.object(ai,'cli',side_effect=cli),self.assertRaisesRegex(ValueError,'different reference'):ai.remote_download({'run_id':result['run_id'],'document_id':'test-document'},folder)
+  with patch.object(ai,'cli',side_effect=cli),self.assertRaisesRegex(ValueError,'reference'):ai.remote_download({'run_id':result['run_id'],'document_id':'test-document'},folder)
   self.assertFalse((folder/'movie.mp4').exists())
  def test_large_references_are_lossless_files_not_notebook_source(self):
   image=self.folder/'reference.png';image.write_bytes(b'large-reference-fixture'*100000);job=self.job();ai.prepare({**self.request,'model_id':'Lightricks/LTX-Video-0.9.5','reference':str(image)},job)
@@ -176,6 +220,10 @@ class GenerationTests(unittest.TestCase):
   rows=[{'id':'owner/new-model','sha':'a'*40,'downloads':2,'likes':1,'tags':['uncensored'],'cardData':{'license':'apache-2.0'},'pipeline_tag':'text-to-image','images':[{'url':'https://example.invalid/private.png'}]}]
   with patch.object(ai,'request_json',return_value=rows) as call:
    result=ai.search({'provider':'huggingface','query':'new-model'});self.assertEqual(call.call_count,1);self.assertNotIn('images',result['models'][0]);self.assertEqual(result['models'][0]['safety_profile'],'declared_uncensored')
+ def test_discovered_vace_retains_video_subject_reference_capabilities(self):
+  with patch.object(ai,'request_json',side_effect=[{'sha':'a'*40,'gated':False,'cardData':{'license':'apache-2.0'}},{'_class_name':'WanVACEPipeline'}]):
+   model=ai.register({'provider':'huggingface','id':'owner/vace-subject-model'})['registered']
+  self.assertEqual(model['task'],'video');self.assertTrue(model['reference_required']);self.assertEqual(model['reference_max'],4);self.assertEqual(model['reference_kind'],'subject')
  def test_saved_huggingface_token_is_used_for_search_and_gated_registration(self):
   ai.save_settings({'hf_token':'fake-provider-token'})
   with patch.object(ai,'request_json',return_value=[]) as request:

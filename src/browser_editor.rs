@@ -857,6 +857,10 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 )?,
                 s.revision,
             )),
+            "/api/ai/reference-sets" => Ok(Response::value(
+                crate::generation::reference_sets(),
+                s.revision,
+            )),
             "/api/ai/state" => Ok(Response::value(crate::generation::state(), s.revision)),
             "/api/ai/reference" => Ok(Response::bytes(
                 "image/png",
@@ -1075,6 +1079,13 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         "/api/ai/reference" => {
             return Ok(Response::value(
                 crate::generation::upload_reference(&s.project.document_id, &req.body)?,
+                s.revision,
+            ));
+        }
+        "/api/ai/reference-set" => {
+            let value: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
+            return Ok(Response::value(
+                crate::generation::reference_set_action(&s.project.document_id, &value)?,
                 s.revision,
             ));
         }

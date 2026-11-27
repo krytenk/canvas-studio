@@ -10,7 +10,7 @@ from canvas_studio_mcp import obj,enum,tool,STRING,GUARD,GENERATION,validate
 PROTOCOL='2026-07-28'
 NAMES={'kaggle_model_catalog':'models','kaggle_model_search':'search','kaggle_prepare_inference':'prepare','kaggle_submit_inference':'submit','kaggle_inference_status':'remote_status','kaggle_download_output':'download'}
 def schema(operation):
- fields={k:v for k,v in GENERATION.items() if k not in ('operation','reference_page','reference_path')};fields['document_id']=STRING
+ fields={k:v for k,v in GENERATION.items() if k not in ('operation','reference_page','reference_path','reference_set_id','reference_set_name')};fields['document_id']=STRING
  return obj(fields,('document_id',))
 TOOLS=[tool(name,name.replace('_',' ').title(),'Use the Canvas Studio reviewed model backend. Prepare is offline and embeds no credentials. Submit creates a private, finite GPU notebook and uses your Kaggle quota. Configure credentials in the app; never pass them to a tool. No arbitrary shell/code execution or paid endpoint. Results remain in the private local AI workspace.',schema(operation),readonly=operation=='models') for name,operation in NAMES.items()]
 for t in TOOLS:t['annotations']['openWorldHint']=True

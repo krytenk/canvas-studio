@@ -19,7 +19,7 @@ import sys
 import tempfile
 from urllib.parse import urlencode
 
-VERSION = "1.17.0"
+VERSION = "1.18.0"
 PROTOCOL = "2026-07-28"
 LEGACY = "2025-11-25"
 PREFIX = "io.modelcontextprotocol/"
@@ -123,7 +123,7 @@ TOOLS += [
 
 # The same generation bridge is shared with native/browser controls. Credentials
 # are deliberately absent from this schema and never returned by state calls.
-GENERATION={"operation":enum("models","reference","search","register","prepare","submit","generate","remote_status","download"),"model_id":STRING,"provider":enum("huggingface","civitai"),"id":STRING,"query":STRING,"type":enum("Checkpoint","LORA"),"include_mature":BOOL,"task":enum("image","video"),"run_id":STRING,"prompt":STRING,"negative_prompt":STRING,"precision":enum("fp16","bf16","fp32"),"quantization":enum("none","nf4"),"content_mode":enum("standard","flexible"),"use":enum("commercial","research"),"device":enum("cuda","cpu"),"offload":BOOL,"license_acknowledged":BOOL,"adapter":STRING,"reference_page":PAGE,"reference_id":STRING,"reference_fit":enum("contain","cover"),"reference_path":STRING}
+GENERATION={"operation":enum("models","reference","reference_sets","save_reference_set","use_reference_set","search","register","prepare","submit","generate","remote_status","download"),"model_id":STRING,"provider":enum("huggingface","civitai"),"id":STRING,"query":STRING,"type":enum("Checkpoint","LORA"),"include_mature":BOOL,"task":enum("image","video"),"run_id":STRING,"prompt":STRING,"negative_prompt":STRING,"precision":enum("fp16","bf16","fp32"),"quantization":enum("none","nf4"),"content_mode":enum("standard","flexible"),"use":enum("commercial","research"),"device":enum("cuda","cpu"),"offload":BOOL,"license_acknowledged":BOOL,"adapter":STRING,"reference_page":PAGE,"reference_id":STRING,"reference_ids":{"type":"array","items":STRING,"minItems":1,"maxItems":4,"uniqueItems":True},"reference_set_id":STRING,"reference_set_name":STRING,"reference_strength":NUMBER,"reference_fit":enum("contain","cover"),"reference_path":STRING}
 for key in ("width","height","steps","seed","frames","fps","timeout","download_limit_gb","version_id"):GENERATION[key]={"type":"integer","minimum":0}
 GENERATION['guidance']=NUMBER
 TOOLS.append(tool('studio_generation','Image/video generation and Kaggle GPU jobs','Inspect reviewed free-weight recipes, search Hugging Face/Civitai, register a compatible safetensors recipe, prepare a private Kaggle notebook, submit a finite GPU run, generate locally, inspect a remote run or download its result. models reads connection booleans, never secrets. Review licence/hardware fit first. Upload a workspace image with operation reference/reference_path to obtain reference_id; use that ID or reference_page, plus reference_fit contain/cover. Submit uploads this prompt and selected reference to your private Kaggle notebook and consumes your available GPU quota. No paid inference endpoints are used. Queue tasks return a local job ID; inspect/cancel/save with studio_media_job. ai_import(id,page/start) imports a completed result. Remote runs return run_id; remote cancellation is through Kaggle controls.',obj({**GUARD,**GENERATION},(*GUARD,'operation'))))
@@ -254,6 +254,8 @@ class Studio:
             return {"document_id": a["document_id"], "revision": revision, "page": a.get("page", 0)}, data
         if name == "studio_preflight": return self.http("/api/preflight",guard=read_guard), None
         if name == 'studio_generation':
+            if a['operation']=='reference_sets':return self.http('/api/ai/reference-sets',guard=read_guard),None
+            if a['operation'] in ('save_reference_set','use_reference_set'):return self.http('/api/ai/reference-set',{'operation':'save' if a['operation']=='save_reference_set' else 'load','reference_ids':a.get('reference_ids'), 'name':a.get('reference_set_name'), 'id':a.get('reference_set_id')},a),None
             if a['operation']=='models':return self.http('/api/ai/state',guard=read_guard),None
             if a['operation']=='reference':
                 path=self.scoped(a.get('reference_path',''),reading=True)

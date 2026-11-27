@@ -38,8 +38,10 @@ The existing live-editor MCP now has **15 tools**. Its `studio_generation` tool
 adds discovery/registration, notebook preparation, local inference and Kaggle
 orchestration with the live document/revision guards. Use `studio_media_job` to
 poll/cancel/save task outputs and `studio_edit` with `ai_import` to place a result.
-For reference-page snapshots and live result placement this main adapter is the
-appropriate choice. See [agent control](AGENT-CONTROL.md).
+For uploading reference files, saving/loading named reference sets, page snapshots
+and live result placement this main adapter is the appropriate choice. Send the
+returned ordered `reference_ids` array to multi-reference recipes; the standalone
+server accepts existing document-scoped IDs but does not manage the local library. See [agent control](AGENT-CONTROL.md).
 
 Both servers support per-request MCP `2026-07-28` and negotiated legacy
 `2025-11-25`. Installing a server does not itself grant a Kaggle account, GPU quota

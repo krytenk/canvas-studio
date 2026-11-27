@@ -125,13 +125,48 @@ def run(binary,chrome=None,local=False):
      page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').first.click(timeout=20000)
     dl.value.save_as(work/'browser-image-to-video.zip')
     with zipfile.ZipFile(work/'browser-image-to-video.zip') as z:
-     spec=json.loads(z.read('manifest.json'))['spec'];assert spec['reference_fit']=='cover' and spec['reference_sha256']==hashlib.sha256(z.read('reference.png')).hexdigest()
+     spec=json.loads(z.read('manifest.json'))['spec'];assert spec['reference_fit']=='cover' and spec['references'][0]['sha256']==hashlib.sha256(z.read('reference-01.png')).hexdigest()
     invalid=work/'invalid-reference.png';invalid.write_bytes(b'not an image')
     with page.expect_file_chooser() as fc:page.locator('#ai-reference-choose').click()
     fc.value.set_files(invalid)
     page.wait_for_function("() => !aiReferenceBusy && !aiReferenceId && document.querySelector('#ai-reference-preview').hidden")
     assert 'reference_id' not in page.evaluate("aiRequest('prepare')"), 'Failed replacement kept the previous persona selected'
-    page.locator('#ai-video-tab').click();assert 'reference_id' not in page.evaluate("aiRequest('prepare')")
+    page.locator('#ai-multi-tab').click();page.wait_for_function("() => aiSelected().pipeline==='WanVACEPipeline'")
+    second=work/'second-view.png';Image.new('RGB',(96,128),'#3c5e90').save(second)
+    with page.expect_file_chooser() as fc:page.locator('#ai-reference-choose').click()
+    fc.value.set_files([reference_file,second]);page.wait_for_function('() => !aiReferenceBusy && aiReferences.length===2')
+    ids=page.evaluate('aiReferences.map(r=>r.id)');assert len(set(ids))==2
+    page.get_by_role('button',name='Move reference 2 earlier',exact=True).click()
+    assert page.evaluate('aiReferences.map(r=>r.id)')==list(reversed(ids))
+    page.locator('#ai-reference-set-name').fill('Two-view fixture')
+    page.get_by_role('button',name='Save named set',exact=True).click()
+    page.wait_for_function("() => document.querySelector('#ai-reference-set').value.length===64")
+    set_id=page.locator('#ai-reference-set').input_value()
+    page.get_by_role('button',name='Clear reference set',exact=True).click()
+    page.locator('#ai-reference-set').select_option(set_id)
+    page.get_by_role('button',name='Load set',exact=True).click()
+    page.wait_for_function('() => !aiReferenceBusy && aiReferences.length===2')
+    assert page.evaluate('aiReferences.map(r=>r.id)')==list(reversed(ids))
+    source_count=page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').count()
+    with page.expect_download() as dl:
+     page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
+     page.wait_for_function("(before) => [...document.querySelectorAll('#ai-jobs button')].filter(b=>b.textContent==='Save inference ZIP').length>before",arg=source_count,timeout=20000)
+     page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').first.click(timeout=20000)
+    dl.value.save_as(work/'browser-multi-reference.zip')
+    with zipfile.ZipFile(work/'browser-multi-reference.zip') as z:
+     spec=json.loads(z.read('manifest.json'))['spec']
+     assert [r['sha256'] for r in spec['references']]==list(reversed(ids))
+     assert [hashlib.sha256(z.read(f'reference-{n:02d}.png')).hexdigest() for n in (1,2)]==list(reversed(ids))
+     assert len(z.read('inference.ipynb'))<900000
+    page.screenshot(path=qa/'multi-reference.png',full_page=True)
+    page.locator('#ai-i2v-tab').click()
+    before=page.locator('#ai-jobs article').count()
+    page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
+    page.wait_for_function("() => document.querySelector('#message').textContent.includes('remove extra images')")
+    assert page.locator('#ai-jobs article').count()==before,'Single-reference recipe silently discarded extra views'
+    page.locator('#ai-video-tab').click();text_request=page.evaluate("aiRequest('prepare')")
+    assert 'reference_id' not in text_request and 'reference_ids' not in text_request
+
 
     page.locator('#ai-edit').click();page.wait_for_selector('#film-studio:visible')
     page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('#generation-studio:visible')
@@ -143,7 +178,7 @@ def run(binary,chrome=None,local=False):
     page.screenshot(path=qa/'generation-narrow.png',full_page=True)
     assert not errors,errors
     context.close();browser.close()
-   report['browser']='Image/text-video/image-video selectors; required first frame; private upload preview; fit/crop; lossless source ZIP; no reference leakage to text-only models; video handoff; credential drafts; narrow layout; no JS errors'
+   report['browser']='Image/text-video/image-video/multi-reference selectors; ordered two-image pack; named set save/load; no silent single-image truncation; required first frame; private upload preview; fit/crop; lossless source ZIP; no reference leakage to text-only models; video handoff; credential drafts; narrow layout; no JS errors'
   # Clearing video history must never silently erase the separate generation work.
   edit([{'action':'film_setup','width':320,'height':192,'fps':24,'duration':24}])
   frame=c.call('studio_media_render',{**c.guard(),'mode':'frame','frame':0});wait(c,frame)

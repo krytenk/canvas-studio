@@ -1,4 +1,4 @@
-# Generation studio — 1.17.0
+# Generation studio — 1.18.0
 
 Canvas Studio has separate **Design**, **Generate** and **Video studio** workspaces.
 Generate works in desktop, browser and MCP. It searches model metadata, prepares
@@ -177,6 +177,50 @@ The live editor MCP uploads a scoped workspace file with `studio_generation`
 `"cover"`. Paths are allowed only for this explicit upload operation. The standalone
 Kaggle adapter can use an already uploaded reference ID with the same document ID.
 
+## Multiple subject references and consistent shots
+
+Choose **Generate → Reference video** in desktop or browser. Upload two to four
+views of the **same adult character**, ideally with consistent hair, wardrobe and
+lighting. Each image stays separate: the app does not build a collage or substitute
+timed keyframes. Add/remove/reorder views before submission. A single-image recipe
+rejects a larger selection instead of silently dropping images.
+
+Save a named set (for example, “Character · portrait and side views”) to the private
+local library. Load it into this or another document for subsequent shots. Saving
+copies the normalized images into the library, so it survives removal of the
+original document's review history. Set names and ordering are immutable snapshots;
+changing a selection and saving creates another snapshot. There are at most 100
+saved sets, each containing up to four images. Library files are private local
+files outside Git and editable project bundles, not a public model-training dataset.
+
+The first reviewed implementation is
+[Wan 2.1 VACE 1.3B](https://huggingface.co/Wan-AI/Wan2.1-VACE-1.3B-diffusers),
+Apache 2.0, revision `ec4d2cb062b548996b179d493fdd05340de702a1`. It uses
+[Diffusers' subject-reference inputs](https://huggingface.co/docs/diffusers/en/api/pipelines/wan)
+with all images in one video batch. The starting preset is 384 × 512, 17 frames,
+8 fps, 20 steps, guidance 5, BF16 denoiser, FP32 VAE, CPU offload and a 24 GiB
+allowance for about 17.73 GiB of weights. **Reference influence** controls VACE's
+aggregate conditioning scale (0.5–2); it is not a per-face identity score.
+
+Keep the same ordered set across shots, change your shot direction and use a
+fresh seed as needed. This conditions the model on more views but **does not lock
+identity**. The small free-GPU model can alter faces, hair, clothing or proportions;
+review every shot before use. More references also increase sequence length and
+runtime. First-frame image-to-video remains a separate workflow.
+
+Prepared ZIPs include each lossless normalized reference and a small notebook.
+Kaggle submission attaches one private, version-pinned input pack, reused for the
+same ordered set. Downloads verify **every ordered source hash**, the complete
+set fingerprint, model revision and output hash. A missing, substituted or
+reordered reference causes rejection rather than an apparently successful import.
+
+MCP: upload each workspace image using `studio_generation` operation `reference`,
+then send `reference_ids: [id1, id2]` to prepare/submit/generate. Operations
+`save_reference_set` (`reference_set_name`, `reference_ids`), `reference_sets` and
+`use_reference_set` (`reference_set_id`) support the same local library. Loading
+returns document-scoped IDs; pass them to subsequent jobs. The original singular
+`reference_id` remains compatible. No provider credentials belong in tool arguments.
+
 ## Storage, reproducibility and limits
 
 - Default tool/runtime/cache location is `~/.local/share/canvas-studio/`, outside
@@ -216,8 +260,7 @@ Kaggle Tesla T4 runs, download, page/timeline import and video playback. The tes
 512 × 320 / 33-frame / 20-step Wan clip took 468.64 seconds of inference, plus
 setup, weights and queueing. See the scoped
 [GPU acceptance report](KAGGLE-GPU-ACCEPTANCE.md). Production recipes still need
-individual account/hardware validation. Per-model quality benchmarks, multi-reference conditioning,
-arbitrary community LoRA stacks, multi-GPU sharding and remote stop automation
+individual account/hardware validation. Per-model identity benchmarks, character-training adapters, arbitrary community LoRA stacks, multi-GPU sharding and remote stop automation
 remain future work. No claim of having benchmarked every production recipe is made.
 
 Primary integration references: [Kaggle CLI notebook workflow](https://github.com/Kaggle/kaggle-cli/blob/main/skills/references/kernels.md),
