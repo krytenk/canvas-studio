@@ -1,8 +1,24 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const fragment=location.hash.slice(1);
-if(fragment){sessionStorage.setItem('canvas-token',fragment);history.replaceState(null,'',location.pathname);}
-const token=sessionStorage.getItem('canvas-token')||'';
+if(/^[a-f0-9]{64}$/.test(fragment)){sessionStorage.setItem('canvas-token',fragment);history.replaceState(null,'',location.pathname);}
+let token=sessionStorage.getItem('canvas-token')||'';
+function sessionAccess(message='This browser needs the complete private session link supplied when Canvas Studio starts. The address alone cannot connect it.'){
+ $('session-access-error').textContent=message;
+ $('session-state').textContent='Private studio connection required';
+ if(!$('session-access').open)$('session-access').showModal();
+}
+async function connectPrivateSession(value){
+ try{
+  const url=new URL(value);
+  if(url.origin!==location.origin||url.pathname!=='/'||!/^#[a-f0-9]{64}$/.test(url.hash))throw Error('Use the complete private link for this running Canvas Studio address.');
+  token=url.hash.slice(1);sessionStorage.setItem('canvas-token',token);history.replaceState(null,'',location.pathname);
+  await refresh();$('session-access').close();$('session-link').value='';notice('This browser is connected to your private studio.');
+ }catch(error){sessionAccess(error.message);}
+}
+$('session-access-form').onsubmit=e=>{e.preventDefault();const value=$('session-link').value;serial(()=>connectPrivateSession(value));};
+$('session-access').addEventListener('cancel',e=>e.preventDefault());
+window.addEventListener('hashchange',()=>{if(/^#[a-f0-9]{64}$/.test(location.hash))serial(()=>connectPrivateSession(location.href));});
 let state=null,page=0,selected=null,previewURL=null,pending=false,working=false,previewSequence=0,range=[0,0],drag=null;
 let queue=Promise.resolve();
 const drafts=new Map();
@@ -15,7 +31,7 @@ const geometryLabels={x:'X',y:'Y',width:'Width',height:'Height',rotation:'Rotati
 function notice(message,error=false){$('message').textContent=message;$('message').classList.toggle('error',error);$('message').hidden=false;clearTimeout(notice.timer);if(!error)notice.timer=setTimeout(()=>$('message').hidden=true,6000);}
 async function api(path,options={}){
  const response=await fetch(path,{...options,headers:{'X-Canvas-Token':token,...(state?{'X-Canvas-Revision':String(state.revision),...(options.method==='POST'?{'X-Canvas-Document':state.document_id}:{})}:{}),...options.headers}});
- if(!response.ok){let error;try{error=await response.json();}catch{error={error:response.statusText};}throw Error(error.error||`Request failed (${response.status})`);}
+ if(!response.ok){let error;try{error=await response.json();}catch{error={error:response.statusText};}if(response.status===403)sessionAccess('The private session link is missing or has expired. Reconnect this browser with the current complete link; your entered fields are preserved.');throw Error(error.error||`Request failed (${response.status})`);}
  return response;
 }
 function serial(task){queue=queue.then(async()=>{working=true;try{return await task();}catch(error){notice(error.message,true);}finally{working=false;}});return queue;}
@@ -107,7 +123,7 @@ for(const b of document.querySelectorAll('[data-emphasis]'))b.onclick=()=>{const
 $('zoom').onchange=fit;new ResizeObserver(fit).observe($('paper-scroll'));
 window.addEventListener('beforeunload',event=>{if(pending||drafts.size){event.preventDefault();event.returnValue='';}});
 document.addEventListener('keydown',event=>{if(!(event.ctrlKey||event.metaKey))return;const key=event.key.toLowerCase();if(key==='s'){event.preventDefault();$('save').click();}else if(key==='z'&&!['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){event.preventDefault();command({action:event.shiftKey?'redo':'undo'});}});
-refresh().catch(error=>notice(error.message,true));
+if(token)refresh().catch(error=>notice(error.message,true));else sessionAccess();
 
 // Live agent changes appear in the same document. Never overwrite a form draft.
 let externalRevision=null,polling=false;

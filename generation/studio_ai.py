@@ -1,11 +1,11 @@
 """Canvas Studio model discovery, private settings and finite Kaggle orchestration.
 All network hosts/commands are fixed providers; model data and prompts are never shell code.
 """
-import argparse,base64,hashlib,json,os,re,shutil,subprocess,sys,time,urllib.parse,urllib.request,zipfile
+import argparse,base64,hashlib,json,os,re,shutil,subprocess,sys,time,urllib.parse,urllib.request,urllib.error,zipfile
 from pathlib import Path
 from studio_inference import validate,run as infer,REPO
 HERE=Path(__file__).resolve().parent
-VERSION='1.16.0';KAGGLE_VERSION='2.2.5'
+VERSION='1.16.1';KAGGLE_VERSION='2.2.5'
 def root():
  p=Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'canvas-studio/ai';p.mkdir(parents=True,exist_ok=True);p.chmod(0o700);return p
 def write(path,value):
@@ -51,12 +51,25 @@ def catalog():
  if custom.exists():data['models'].extend(json.loads(custom.read_text()))
  return data
 def request_json(url,token=None):
+ class Redirect(urllib.request.HTTPRedirectHandler):
+  def redirect_request(self,req,fp,code,msg,headers,newurl):
+   if urllib.parse.urlsplit(newurl).scheme!='https':raise ValueError('Refusing a non-HTTPS model metadata redirect')
+   redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+   if urllib.parse.urlsplit(req.full_url).netloc!=urllib.parse.urlsplit(newurl).netloc:redirected.remove_header('Authorization')
+   return redirected
  headers={'User-Agent':'CanvasStudio/1.16 (+model metadata discovery)','Accept':'application/json'}
  if token:headers['Authorization']='Bearer '+token
- with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=25) as r:
-  data=r.read(4*1024**2+1)
-  if len(data)>4*1024**2:raise ValueError('Model metadata exceeds response limit')
-  return json.loads(data)
+ provider='Hugging Face' if urllib.parse.urlsplit(url).hostname=='huggingface.co' else 'Civitai'
+ try:
+  with urllib.request.build_opener(Redirect()).open(urllib.request.Request(url,headers=headers),timeout=25) as r:
+   data=r.read(4*1024**2+1)
+   if len(data)>4*1024**2:raise ValueError('Model metadata exceeds response limit')
+   return json.loads(data)
+ except urllib.error.HTTPError as error:
+  if error.code in (401,403):raise ValueError(f'{provider} denied this request (HTTP {error.code}). Check the saved provider token and any required model access or website verification.') from None
+  if error.code==429:raise ValueError(f'{provider} is rate limiting requests. Wait before trying again.') from None
+  raise ValueError(f'{provider} returned HTTP {error.code}. Try again later or check the model page.') from None
+ except urllib.error.URLError:raise ValueError(f'Could not connect to {provider}. Check your network and try again.') from None
 def search(v):
  provider=v.get('provider','huggingface');query=v.get('query','').strip()
  if len(query)>160:raise ValueError('Search up to 160 characters')
@@ -64,7 +77,7 @@ def search(v):
   params={'limit':20,'sort':'trendingScore' if not query else 'downloads','direction':-1,'full':'true'}
   if query:params['search']=query
   else:params['pipeline_tag']='text-to-video' if v.get('task')=='video' else 'text-to-image'
-  rows=request_json('https://huggingface.co/api/models?'+urllib.parse.urlencode(params));models=[]
+  rows=request_json('https://huggingface.co/api/models?'+urllib.parse.urlencode(params),settings().get('hf_token') or os.environ.get('HF_TOKEN'));models=[]
   for m in rows:
    id=m.get('id','');card=m.get('cardData') or {};tags=m.get('tags',[])
    if not REPO.fullmatch(id):continue
@@ -86,7 +99,7 @@ def register(v):
  provider=v.get('provider');id=str(v.get('id',''))
  if provider=='huggingface':
   if not REPO.fullmatch(id):raise ValueError('Use a Hugging Face owner/model ID')
-  meta=request_json('https://huggingface.co/api/models/'+id);sha=meta['sha'];card=meta.get('cardData') or {};index=request_json('https://huggingface.co/'+id+'/resolve/'+sha+'/model_index.json')
+  token=settings().get('hf_token') or os.environ.get('HF_TOKEN');meta=request_json('https://huggingface.co/api/models/'+id,token);sha=meta['sha'];card=meta.get('cardData') or {};index=request_json('https://huggingface.co/'+id+'/resolve/'+sha+'/model_index.json',token)
   from studio_inference import SUPPORTED
   cls=index.get('_class_name','')
   if cls not in SUPPORTED:raise ValueError('This repository needs a dedicated audited recipe; no remote Python will be executed')

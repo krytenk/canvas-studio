@@ -1,8 +1,8 @@
 """Provider-independent tests for private finite inference jobs, input validation and weight selection."""
-import ast,hashlib,json,os,sys,tempfile,unittest,zipfile
+import ast,hashlib,json,os,sys,tempfile,unittest,zipfile,urllib.request,urllib.error
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch,MagicMock
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'generation'))
 import studio_ai as ai
 from studio_inference import validate,select_files
@@ -62,6 +62,25 @@ class GenerationTests(unittest.TestCase):
   rows=[{'id':'owner/new-model','sha':'a'*40,'downloads':2,'likes':1,'tags':['uncensored'],'cardData':{'license':'apache-2.0'},'pipeline_tag':'text-to-image','images':[{'url':'https://example.invalid/private.png'}]}]
   with patch.object(ai,'request_json',return_value=rows) as call:
    result=ai.search({'provider':'huggingface','query':'new-model'});self.assertEqual(call.call_count,1);self.assertNotIn('images',result['models'][0]);self.assertEqual(result['models'][0]['safety_profile'],'declared_uncensored')
+ def test_saved_huggingface_token_is_used_for_search_and_gated_registration(self):
+  ai.save_settings({'hf_token':'fake-provider-token'})
+  with patch.object(ai,'request_json',return_value=[]) as request:
+   ai.search({'provider':'huggingface','query':'test'});self.assertEqual(request.call_args.args[1],'fake-provider-token')
+  with patch.object(ai,'request_json',side_effect=[{'sha':'a'*40,'gated':True,'cardData':{'license':'apache-2.0'}},{'_class_name':'StableDiffusionXLPipeline'}]) as request:
+   result=ai.register({'provider':'huggingface','id':'owner/test-model'});self.assertEqual(request.call_count,2)
+   self.assertTrue(all(call.args[1]=='fake-provider-token' for call in request.call_args_list));self.assertNotIn('fake-provider-token',json.dumps(result))
+ def test_metadata_redirects_do_not_forward_bearer_tokens_to_other_hosts(self):
+  def builder(handler):
+   req=urllib.request.Request('https://huggingface.co/file',headers={'Authorization':'Bearer fake-secret'})
+   same=handler.redirect_request(req,None,302,'',{},'https://huggingface.co/next');self.assertEqual(same.get_header('Authorization'),'Bearer fake-secret')
+   other=handler.redirect_request(req,None,302,'',{},'https://cdn.example.invalid/next');self.assertIsNone(other.get_header('Authorization'))
+   with self.assertRaises(ValueError):handler.redirect_request(req,None,302,'',{},'http://cdn.example.invalid/next')
+   response=MagicMock();response.__enter__.return_value.read.return_value=b'[]';opener=MagicMock();opener.open.return_value=response;return opener
+  with patch.object(ai.urllib.request,'build_opener',side_effect=builder):self.assertEqual(ai.request_json('https://huggingface.co/api/models','fake-secret'),[])
+ def test_provider_access_and_rate_limit_errors_are_actionable_without_secret_echo(self):
+  for status,expected in [(403,'denied this request'),(429,'rate limiting'),(503,'HTTP 503')]:
+   opener=MagicMock();opener.open.side_effect=urllib.error.HTTPError('https://huggingface.co/secret-query',status,'',None,None)
+   with patch.object(ai.urllib.request,'build_opener',return_value=opener),self.assertRaisesRegex(ValueError,expected):ai.request_json('https://huggingface.co/api/models','fake-secret')
  def test_civitai_paid_access_and_pickle_are_not_registered(self):
   for version in [{'availability':'EarlyAccess','baseModel':'SDXL 1.0','id':12},{'availability':'Public','baseModel':'SDXL 1.0','id':12,'files':[{'type':'Model','name':'weights.ckpt','hashes':{'SHA256':'a'*64}}]}]:
    with patch.object(ai,'request_json',return_value={'name':'Model','type':'Checkpoint','modelVersions':[version]}),self.assertRaises(ValueError):ai.register({'provider':'civitai','id':'123'})

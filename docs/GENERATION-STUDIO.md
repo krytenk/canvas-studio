@@ -1,10 +1,27 @@
-# Generation studio — 1.16
+# Generation studio — 1.16.1
 
 Canvas Studio has separate **Design**, **Generate** and **Video studio** workspaces.
 Generate works in desktop, browser and MCP. It searches model metadata, prepares
 private finite Kaggle notebooks, submits configured runs, downloads completed
 assets and imports them as ordinary editable-project images or Film footage.
 Designing, templates and video editing remain usable without model services.
+
+## Browser connection and search
+
+Open the complete private session URL supplied when the local browser editor
+starts, including its `#…` fragment. Browser sessions are separate: copying only
+`http://127.0.0.1:PORT/` into a different browser does not authorize that browser.
+Version 1.16.1 shows a connection screen for this case. Paste the complete link
+there, or follow the complete link in the same tab; entered fields are preserved.
+Provider API keys cannot replace this local session link. Token/origin checks are
+still required for all private API calls.
+
+In Generate, the upper filter searches the reviewed library only. Open **Discover
+models & weights**, choose Hugging Face/Civitai, enter a query and click **Search
+live catalog**. Progress, results, zero matches and provider errors appear beside
+that form. Task history also labels the provider and query. Connections lists
+which credentials are saved; this is not a claim that a provider has validated
+those credentials. Search/registration uses the saved provider token where needed.
 
 ## Start here
 

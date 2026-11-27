@@ -64,12 +64,15 @@ jobs:
         run: |
           .ui-venv/bin/python scripts/generation_tests.py
           .ui-venv/bin/python scripts/native_generation_smoke.py --binary target/release/canvas-studio
+          .ui-venv/bin/python scripts/search_session_smoke.py --binary target/release/canvas-studio --chrome chromium
           CANVAS_STUDIO_AI_PYTHON="$PWD/.ui-venv/bin/python" .ui-venv/bin/python scripts/generation_smoke.py --binary target/release/canvas-studio --chrome chromium
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: canvas-studio-ui-proofs
           path: |
+            qa/search-session/*.png
+            qa/search-session/report.json
             qa/native-generation/*.png
             qa/native-generation/result.txt
             qa/native-generation/native.log

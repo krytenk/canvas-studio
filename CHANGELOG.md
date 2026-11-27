@@ -1,5 +1,18 @@
 # Changes
 
+## 1.16.1 — Browser connection and model search repair
+
+- A browser opened with the bare local address now asks for its private session
+  link before accepting work. Same-tab private-link reconnection preserves entered
+  connection fields; loopback token and origin checks remain enforced.
+- Live catalog results, progress, empty states, provider errors and retries appear
+  beside the search form, with source/query labels and saved-provider status.
+- Hugging Face search and gated registration use the saved HF token. Metadata
+  redirects strip bearer credentials on host changes and reject HTTP downgrades.
+- Regression coverage includes a fresh unauthenticated browser, expired-session
+  reconnection, entered-key preservation, private credential save and search states.
+
+
 ## 1.16.0 — Generation studio and expanded template systems
 
 - Separate Design, Generate and Video studio workspaces in desktop/browser; 24 new
