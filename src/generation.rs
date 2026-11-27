@@ -458,6 +458,43 @@ mod reference_tests {
         assert!(!reference_dir(&document).unwrap().exists());
     }
     #[test]
+    fn generated_shots_append_without_overlap_or_truncation_and_fail_atomically() {
+        let mut p = Project::default();
+        p.production.timeline.fps = 24;
+        p.production.timeline.duration = 10;
+        let asset = |id: &str| crate::timeline::MediaAsset {
+            id: id.repeat(64),
+            name: "Shot".into(),
+            extension: "mp4".into(),
+            kind: "video".into(),
+            bytes: 100,
+            duration_us: 2_125_000,
+            width: 384,
+            height: 512,
+            has_audio: false,
+            sample_rate: 0,
+            channels: 0,
+        };
+        import_video(&mut p, asset("a"), None).unwrap();
+        import_video(&mut p, asset("b"), None).unwrap();
+        let t = &p.production.timeline;
+        assert_eq!(t.duration, 102);
+        assert_eq!(
+            t.clips
+                .iter()
+                .map(|c| (c.start, c.duration))
+                .collect::<Vec<_>>(),
+            vec![(0, 51), (51, 51)]
+        );
+        let before = serde_json::to_value(&p).unwrap();
+        assert!(import_video(&mut p, asset("c"), Some(0)).is_err());
+        assert_eq!(serde_json::to_value(&p).unwrap(), before);
+        let mut long = asset("d");
+        long.duration_us = 601_000_000;
+        assert!(import_video(&mut p, long, None).is_err());
+        assert_eq!(serde_json::to_value(&p).unwrap(), before);
+    }
+    #[test]
     fn rejected_reference_never_creates_a_stored_input() {
         let document = generate_document_id();
         assert!(upload_reference(&document, b"not an image").is_err());
@@ -616,6 +653,50 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         )
     })
 }
+fn import_video(
+    p: &mut Project,
+    asset: crate::timeline::MediaAsset,
+    start: Option<u64>,
+) -> Result<(), String> {
+    let mut next = p.clone();
+    let t = &mut next.production.timeline;
+    let mut command = json!({"action":"film_add","asset":asset.id});
+    if let Some(start) = start {
+        command["start"] = json!(start);
+    } else {
+        let start = t
+            .clips
+            .iter()
+            .filter(|c| {
+                t.tracks
+                    .iter()
+                    .any(|track| track.id == c.track && track.kind == "visual")
+            })
+            .map(|c| c.start.saturating_add(c.duration))
+            .max()
+            .unwrap_or(0);
+        let duration = asset
+            .duration_us
+            .checked_mul(t.fps as u64)
+            .ok_or("Generated footage duration overflow")?
+            .checked_div(1_000_000)
+            .unwrap_or(0)
+            .max(1);
+        let end = start
+            .checked_add(duration)
+            .ok_or("Generated footage duration overflow")?;
+        if end > t.fps as u64 * 600 {
+            return Err("Appending this shot would exceed the 10-minute film limit".into());
+        }
+        t.duration = t.duration.max(end);
+        command["start"] = json!(start);
+        command["duration"] = json!(duration);
+    }
+    t.assets.insert(asset.id.clone(), asset);
+    crate::timeline::apply(&mut next, &command)?;
+    *p = next;
+    Ok(())
+}
 pub(crate) fn import(p: &mut Project, v: &Value) -> Result<(), String> {
     let id = v["id"].as_str().ok_or("Choose a completed generation")?;
     let status = crate::media_service::status(id, &p.document_id)?;
@@ -627,12 +708,7 @@ pub(crate) fn import(p: &mut Project, v: &Value) -> Result<(), String> {
     let path = crate::media_service::output(id, &p.document_id)?;
     if status["mode"] == "ai_video" {
         let a = crate::media_store::import(&path, "Generated footage.mp4")?;
-        let asset = a.id.clone();
-        p.production.timeline.assets.insert(asset.clone(), a);
-        crate::timeline::apply(
-            p,
-            &json!({"action":"film_add","asset":asset,"start":v["start"].as_u64().unwrap_or(0)}),
-        )?;
+        import_video(p, a, v["start"].as_u64())?;
     } else {
         let i = v["page"].as_u64().ok_or("Choose a destination page")? as usize;
         if i >= p.pages.len() {

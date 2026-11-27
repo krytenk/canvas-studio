@@ -84,11 +84,13 @@ tiny random test weights. RealVisXL/Lightning image and Wan 2.1 1.3B video
 [acceptance](KAGGLE-GPU-ACCEPTANCE.md) passed on a connected Kaggle Tesla T4,
 including download, import, playback and portable recovery. Version 1.17 adds
 document-scoped first-frame upload, fit/crop framing, a practical LTX I2V recipe
-and the same guarded input operation for agents.
+and the same guarded input operation for agents. Version 1.18 adds genuine VACE
+subject conditioning, up to four ordered views, private named sets reusable across
+documents and complete-set receipts for subsequent shots.
 
 Next priorities: broaden measured image/video quality and performance comparisons;
-extend the uploaded first-frame workflow with multi-reference controls; curated compatible
-LoRA collections; automatic caption/transcription with licence-reviewed weights;
+benchmark multi-reference identity retention across different scenes; curated
+compatible character adapters and LoRA collections; automatic caption/transcription with licence-reviewed weights;
 then richer timeline transitions and audio controls. Multi-GPU dispatch, arbitrary
 custom-code models, VPS deployment and cloud storage require separate design and
 resource decisions. Keep model caches external to the repository.

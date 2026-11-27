@@ -91,7 +91,7 @@ async function aiPoll(){if(!aiOpen||aiPollBusy||!state)return;aiPollBusy=true;tr
   if(result.remote_state)row.append(elem('p',{},'Kaggle: '+result.remote_state));if(result.log_tail)row.append(elem('pre',{class:'ai-log'},result.log_tail));
   if(result.source_available)row.append(button('Save inference ZIP',()=>download('/api/film/source?id='+j.id,'private-inference.zip')));
   if(['ai_image','ai_video'].includes(j.mode)){
-   row.append(button('Download '+(j.mode==='ai_video'?'MP4':'PNG'),()=>download('/api/film/output?id='+j.id,j.mode==='ai_video'?'generated-video.mp4':'generated-image.png')),button(j.mode==='ai_video'?'Add to video edit':'Place on current page',()=>command({action:'ai_import',id:j.id,page,start:0})));
+   row.append(button('Download '+(j.mode==='ai_video'?'MP4':'PNG'),()=>download('/api/film/output?id='+j.id,j.mode==='ai_video'?'generated-video.mp4':'generated-image.png')),button(j.mode==='ai_video'?'Add to video edit':'Place on current page',()=>command({action:'ai_import',id:j.id,page})));
    if(j.mode==='ai_image'){const image=elem('img',{alt:'Generated studio image'});const url=URL.createObjectURL(await(await api('/api/film/output?id='+j.id)).blob());image.src=url;image.onload=()=>URL.revokeObjectURL(url);row.append(image);}
   }
  }

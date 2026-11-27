@@ -169,7 +169,9 @@ the matching reference as a private input. Neither notebooks nor ZIPs embed keys
 
 The receipt records the source image checksum, prepared first-frame checksum,
 framing and dimensions. Download verifies the reference fingerprint as well as
-model/revision and output hash. Completed MP4s import into Video studio normally.
+model/revision and output hash. Completed MP4s import into Video studio normally. New generated shots append after
+existing visual clips and extend the film when needed, retaining the full clip.
+Explicit MCP `start` positions remain available with normal overlap validation.
 
 The live editor MCP uploads a scoped workspace file with `studio_generation`
 `operation: "reference", reference_path: "portrait.jpg"`; use the returned

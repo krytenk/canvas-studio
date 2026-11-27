@@ -2,8 +2,10 @@
 
 ## 1.18.0 multiple subject references
 
-96 local Rust tests pass, including private named-set reuse across documents,
+97 local Rust tests pass, including private named-set reuse across documents,
 ordered-image integrity, tamper rejection and invalid/duplicate reference IDs.
+Generated-video append checks cover full-duration timeline growth, explicit
+overlap rejection and rollback when exceeding the ten-minute film limit.
 31 provider-independent Python checks cover real subject-reference argument
 shape, FP32 VACE decoder, complete portable input packs, model discovery,
 single-reference compatibility and incomplete-receipt rejection. Browser/MCP

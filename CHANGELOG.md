@@ -1,5 +1,21 @@
 # Changes
 
+## 1.18.0 — reusable multi-image subject references
+
+- Add Reference video in native/browser studios with one to four distinct views,
+  ordered previews, add/remove/reorder controls and aggregate reference influence.
+- Add private named reference sets, reusable across documents with source integrity
+  checks; expose the same workflow through the live-editor MCP.
+- Add the pinned Wan VACE 1.3B subject-reference recipe, preserving separate images
+  in one video batch rather than treating them as collages or temporal keyframes.
+- Reuse a private, version-pinned Kaggle input pack across shots; verify every
+  ordered reference hash, full-set fingerprint, model revision and output checksum.
+- Append generated shots after existing visuals, extending the timeline without
+  silently truncating footage; preserve explicit agent timing and atomic rollback.
+- Keep existing first-frame image-to-video compatible and reject extra images on
+  single-reference recipes. Install/preflight VACE’s required prompt-cleaning dependency.
+
+
 ## 1.17.0 — image-to-video and private first frames
 
 - Add Image to video in native/browser studios, with PNG/JPEG/WebP selection,
