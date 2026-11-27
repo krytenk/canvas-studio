@@ -165,8 +165,10 @@ Its optional `--local-proof` performs actual CPU safetensors inference through t
 worker and verifies import, undo/redo and portable cold-open, using tiny random
 test weights. This is integration evidence, not an image-quality demonstration.
 
-Production image/video GPU execution must be verified after connecting an eligible
-Kaggle account. Per-model quality benchmarks, uploaded reference-photo UI,
+RealVisXL + SDXL Lightning image execution has passed a real private Kaggle
+Tesla T4 run, download and page import. See the scoped
+[GPU acceptance report](KAGGLE-GPU-ACCEPTANCE.md). Production recipes still need
+individual account/hardware validation. Per-model quality benchmarks, uploaded reference-photo UI,
 arbitrary community LoRA stacks, multi-GPU sharding and remote stop automation
 remain future work. No claim of having benchmarked every production recipe is made.
 

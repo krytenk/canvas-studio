@@ -24,6 +24,11 @@ class GenerationTests(unittest.TestCase):
    with self.subTest(model=model['id']):
     s=ai.spec({**self.request,'model_id':model['id'],'steps':model['steps'],'guidance':model['guidance'],'use':'research','license_acknowledged':True})
     self.assertEqual(s['model']['id'],model['id'])
+ def test_agent_requests_share_reviewed_video_defaults(self):
+  s=ai.spec({'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers','prompt':'A sunlit teacup'})
+  self.assertEqual(s['precision'],'bf16');self.assertEqual(s['download_limit_gb'],32)
+  explicit=ai.spec({'model_id':s['model']['id'],'prompt':'A sunlit teacup','precision':'fp16','download_limit_gb':40})
+  self.assertEqual(explicit['precision'],'fp16');self.assertEqual(explicit['download_limit_gb'],40)
  def test_package_private_pinned_and_has_no_credentials(self):
   ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'secret-kaggle-test-value','hf_token':'secret-hf-test-value','civitai_token':'secret-civi-test-value'})
   job=self.job();request={**self.request,'prompt':"An adult designer says: '); __import__('os').system('false'); #",'device':'cpu','precision':'fp32'}
