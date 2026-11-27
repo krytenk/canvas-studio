@@ -48,7 +48,7 @@ class GenerationTests(unittest.TestCase):
    spec=json.loads(z.read('manifest.json'))['spec'];self.assertEqual(len(spec['references']),2)
    for i,(_,digest) in enumerate(reference_items(s)):
     name='reference-'+str(i+1).zfill(2)+'.png';self.assertEqual(hashlib.sha256(z.read(name)).hexdigest(),digest)
-   self.assertLess(len(z.read('inference.ipynb')),900000)
+   self.assertLess(len(z.read('inference.ipynb')),900000);self.assertIn(b'ftfy==6.3.1',z.read('inference.ipynb'))
   with self.assertRaises(ValueError):ai.spec({**request,'references':[refs[0],refs[0]]})
   with self.assertRaises(ValueError):ai.spec({**request,'references':refs*3})
   with self.assertRaises(ValueError):ai.spec({**request,'model_id':'Lightricks/LTX-Video-0.9.5'})

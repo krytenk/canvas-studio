@@ -148,6 +148,9 @@ def generator_device(model,cuda):
 
 def run(s,output_dir,cache_dir,progress=lambda v:None):
  validate(s)
+ if s['model']['pipeline']=='WanVACEPipeline':
+  try:import ftfy
+  except ImportError:raise ValueError('VACE requires ftfy. Update generation tools with scripts/setup_generation.py --local-inference; remote notebook preparation installs it automatically') from None
  reference_images,reference_infos=prepare_references(s)
  import torch
  from huggingface_hub import HfApi,snapshot_download
