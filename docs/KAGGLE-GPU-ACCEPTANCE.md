@@ -42,7 +42,64 @@ No provider credentials are included in the notebooks, repository or this report
   The exported portable project passed the native cold-file verifier.
 - MP4 SHA-256: `2d52f6e2c3a40209fbab15a787074807906d5fd7b8e53f44ddea953372e3cd52`.
 
-## Regression checks
+## Multiple subject references — passed in 1.18.0
+
+Two independent private Kaggle Tesla T4 runs used the same ordered pair of
+fictional adult-creator portraits. The prompts requested a relaxed frontal
+portrait and a turned, three-quarter glance. Both used seed **20261128**;
+the prompts and resulting output hashes are different. This checks reuse across
+shots, not a controlled comparison against one-reference generation.
+
+- Model: `Wan-AI/Wan2.1-VACE-1.3B-diffusers`, pinned revision
+  `ec4d2cb062b548996b179d493fdd05340de702a1`; Apache 2.0.
+- Both runs: 384 × 512, 17 frames, 8 fps, 20 steps, guidance 5, reference influence
+  1, BF16 denoiser, FP32 VAE, CPU offload, 24 GiB download allowance and a
+  1,800-second finite private notebook limit. Weight preflight measured 17.73 GiB.
+- Inference times: **728.55 seconds** and **671.52 seconds**, excluding provisioning,
+  package installation and weight download. Each video is **2.125 seconds**.
+  This compact model is a slow subject-conditioning baseline on the free T4.
+- The same private version-1 input pack was reused. Both returned receipts match
+  **all ordered source hashes and the complete set fingerprint**. The app checked
+  model revision and output checksums before making each MP4 importable.
+- FFprobe confirmed H.264, 384 × 512, 17 frames at 8 fps for each clip. Every decoded
+  frame is distinct. First/last mean absolute RGB differences: 5.6493 and 17.1775.
+- First/middle/last frames were visually compared with both inputs. The character's
+  broad appearance, dark hair, earrings and black top remain recognizable across
+  the two shots. Skin detail is smoothed and facial shape changes somewhat at the
+  turned angle. **This does not establish a face-identity lock or a quality benchmark.**
+- The corrected browser **Add to video edit** action appended the second shot at
+  frame 51, following the first 51-frame clip on a 24 fps edit. Undo removed it;
+  redo restored the two-shot edit. Generated imports now extend a short film rather
+  than truncating the footage; explicit agent positions still use overlap checks.
+- Browser playback reached the end of the **102-frame / 4.25-second** preview with
+  no media error. Exported `.canvas` verification and a new server using an empty
+  application-data directory both passed. Its fresh-cache render restored both
+  embedded source videos at the expected dimensions, duration and clip boundaries. Decoded preview frames
+  0, 50, 51 and 101 also matched the corresponding source frames within normal
+  H.264 re-encoding differences, checking the cut at 50/51.
+- Local saved-set list/load/save was also exercised through the real live-editor
+  MCP without changing the design. Named sets remain private local library assets;
+  source ZIP backups include both normalized reference files and notebook sources.
+
+Issues found by the live test: VACE's prompt cleaner needs **ftfy 6.3.1**, which is
+now installed in prepared notebooks and local inference setup, with an early local
+missing-dependency error. Two initial runs stopped at prompt cleaning before
+inference; the repaired runs above completed. The multi-shot import test also found
+that the UI always requested frame zero, causing an overlap. Desktop/browser imports
+now use the shared append operation, covered by duration/rollback regression tests.
+
+Output SHA-256 values:
+
+- Shot 1: `c527f031379dd14e0e409b84d3df84eb90f4307e8ff7f34ecca94a10f7c236e3`.
+- Shot 2: `4e9dc72326a9288fb1c1588153155fa5ab2e16d90e7ec0b6f10c93599d4fcdf3`.
+
+97 Rust checks, 31 provider-independent Python checks, updated generation/browser/MCP
+smoke tests and the full [Linux CI suite](https://github.com/krytenk/canvas-studio/actions/runs/46082550694)
+passed for code commit `97839cacc34edbedfb70146c80d87bbac43e64fc`. Native Reference video navigation and its scrolled controls are
+included in the isolated Xvfb screenshots. Private media and credentials are not
+published in the repository or release package.
+
+## Earlier 1.16.2 regression checks
 
 Twenty provider-independent Python tests, 92 Rust tests, generation/browser/MCP
 smoke checks and private-session/search regressions pass locally. GitHub's full

@@ -257,6 +257,10 @@ Its optional `--local-proof` performs actual CPU safetensors inference through t
 worker and verifies import, undo/redo and portable cold-open, using tiny random
 test weights. This is integration evidence, not an image-quality demonstration.
 
+Two-shot VACE multi-reference acceptance also passed real private T4 execution,
+complete-set receipt checks, visual review, sequential import, playback and cold
+portable recovery. See the acceptance report for timings and identity limitations.
+
 RealVisXL + SDXL Lightning images and Wan 2.1 1.3B video have passed real private
 Kaggle Tesla T4 runs, download, page/timeline import and video playback. The tested
 512 × 320 / 33-frame / 20-step Wan clip took 468.64 seconds of inference, plus
