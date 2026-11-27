@@ -858,6 +858,14 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 s.revision,
             )),
             "/api/ai/state" => Ok(Response::value(crate::generation::state(), s.revision)),
+            "/api/ai/reference" => Ok(Response::bytes(
+                "image/png",
+                crate::generation::reference_bytes(
+                    &s.project.document_id,
+                    &query(&req.path, "id").ok_or("Choose a reference image")?,
+                )?,
+                s.revision,
+            )),
             "/api/film/motion-tools" => Ok(Response::value(crate::motion::doctor(), s.revision)),
             "/api/film/source" => {
                 let id = query(&req.path, "id").ok_or("Missing job")?;
@@ -1064,6 +1072,12 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         return Ok(r);
     }
     match base {
+        "/api/ai/reference" => {
+            return Ok(Response::value(
+                crate::generation::upload_reference(&s.project.document_id, &req.body)?,
+                s.revision,
+            ));
+        }
         "/api/ai/connections" => {
             let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
             crate::generation::save_connections(v)?;

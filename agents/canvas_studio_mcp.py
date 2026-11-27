@@ -19,7 +19,7 @@ import sys
 import tempfile
 from urllib.parse import urlencode
 
-VERSION = "1.16.2"
+VERSION = "1.17.0"
 PROTOCOL = "2026-07-28"
 LEGACY = "2025-11-25"
 PREFIX = "io.modelcontextprotocol/"
@@ -123,10 +123,10 @@ TOOLS += [
 
 # The same generation bridge is shared with native/browser controls. Credentials
 # are deliberately absent from this schema and never returned by state calls.
-GENERATION={"operation":enum("models","search","register","prepare","submit","generate","remote_status","download"),"model_id":STRING,"provider":enum("huggingface","civitai"),"id":STRING,"query":STRING,"type":enum("Checkpoint","LORA"),"include_mature":BOOL,"task":enum("image","video"),"run_id":STRING,"prompt":STRING,"negative_prompt":STRING,"precision":enum("fp16","bf16","fp32"),"quantization":enum("none","nf4"),"content_mode":enum("standard","flexible"),"use":enum("commercial","research"),"device":enum("cuda","cpu"),"offload":BOOL,"license_acknowledged":BOOL,"adapter":STRING,"reference_page":PAGE}
+GENERATION={"operation":enum("models","reference","search","register","prepare","submit","generate","remote_status","download"),"model_id":STRING,"provider":enum("huggingface","civitai"),"id":STRING,"query":STRING,"type":enum("Checkpoint","LORA"),"include_mature":BOOL,"task":enum("image","video"),"run_id":STRING,"prompt":STRING,"negative_prompt":STRING,"precision":enum("fp16","bf16","fp32"),"quantization":enum("none","nf4"),"content_mode":enum("standard","flexible"),"use":enum("commercial","research"),"device":enum("cuda","cpu"),"offload":BOOL,"license_acknowledged":BOOL,"adapter":STRING,"reference_page":PAGE,"reference_id":STRING,"reference_fit":enum("contain","cover"),"reference_path":STRING}
 for key in ("width","height","steps","seed","frames","fps","timeout","download_limit_gb","version_id"):GENERATION[key]={"type":"integer","minimum":0}
 GENERATION['guidance']=NUMBER
-TOOLS.append(tool('studio_generation','Image/video generation and Kaggle GPU jobs','Inspect reviewed free-weight recipes, search Hugging Face/Civitai, register a compatible safetensors recipe, prepare a private Kaggle notebook, submit a finite GPU run, generate locally, inspect a remote run or download its result. models reads connection booleans, never secrets. Review licence/hardware fit first. Submit uploads this prompt and reference page to your private Kaggle notebook and consumes your available GPU quota. No paid inference endpoints are used. Queue tasks return a local job ID; inspect/cancel/save with studio_media_job. ai_import(id,page/start) imports a completed result. Remote runs return run_id; remote cancellation is through Kaggle controls.',obj({**GUARD,**GENERATION},(*GUARD,'operation'))))
+TOOLS.append(tool('studio_generation','Image/video generation and Kaggle GPU jobs','Inspect reviewed free-weight recipes, search Hugging Face/Civitai, register a compatible safetensors recipe, prepare a private Kaggle notebook, submit a finite GPU run, generate locally, inspect a remote run or download its result. models reads connection booleans, never secrets. Review licence/hardware fit first. Upload a workspace image with operation reference/reference_path to obtain reference_id; use that ID or reference_page, plus reference_fit contain/cover. Submit uploads this prompt and selected reference to your private Kaggle notebook and consumes your available GPU quota. No paid inference endpoints are used. Queue tasks return a local job ID; inspect/cancel/save with studio_media_job. ai_import(id,page/start) imports a completed result. Remote runs return run_id; remote cancellation is through Kaggle controls.',obj({**GUARD,**GENERATION},(*GUARD,'operation'))))
 TOOLS[-1]['annotations']['openWorldHint']=True
 ACTION['action']['enum'].append('ai_import')
 
@@ -255,6 +255,11 @@ class Studio:
         if name == "studio_preflight": return self.http("/api/preflight",guard=read_guard), None
         if name == 'studio_generation':
             if a['operation']=='models':return self.http('/api/ai/state',guard=read_guard),None
+            if a['operation']=='reference':
+                path=self.scoped(a.get('reference_path',''),reading=True)
+                if not path.is_file() or path.stat().st_size>25_000_000:raise ValueError('Choose a reference image up to 25 MB inside the workspace')
+                return self.http('/api/ai/reference',path.read_bytes(),a),None
+            if 'reference_path' in a:raise ValueError('First upload with operation reference and reference_path; then use its reference_id')
             return self.http('/api/ai/action',{k:v for k,v in a.items() if k not in GUARD},a),None
         if name == 'studio_mockup_render':return self.http('/api/mockups/render',{'id':a['id'],'movie':a.get('movie',False)},a),None
         if name == 'studio_media_render':

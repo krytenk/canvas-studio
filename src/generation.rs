@@ -99,6 +99,140 @@ pub(crate) fn save_connections(v: Value) -> Result<(), String> {
     }
     fs::rename(temporary, root().join("connections.json")).map_err(|e| e.to_string())
 }
+fn reference_dir(document: &str) -> Result<PathBuf, String> {
+    if document.is_empty()
+        || document.len() > 160
+        || !document
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err("Invalid reference document".into());
+    }
+    Ok(root().join("references").join(document))
+}
+/// Decode only bounded raster input, honour EXIF rotation and remove original metadata.
+/// Uploaded references are private generation inputs; they never change a design page.
+pub(crate) fn upload_reference(document: &str, bytes: &[u8]) -> Result<Value, String> {
+    use image::ImageDecoder;
+    if bytes.is_empty() || bytes.len() > 25_000_000 {
+        return Err("Choose a PNG, JPEG or WebP image up to 25 MB".into());
+    }
+    let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?;
+    if !matches!(
+        reader.format(),
+        Some(image::ImageFormat::Png | image::ImageFormat::Jpeg | image::ImageFormat::WebP)
+    ) {
+        return Err("Choose a PNG, JPEG or WebP reference image".into());
+    }
+    let mut decoder = reader.into_decoder().map_err(|e| e.to_string())?;
+    let (w, h) = decoder.dimensions();
+    if w == 0 || h == 0 || w as u64 * h as u64 > 16_000_000 {
+        return Err("Reference image exceeds 16 megapixels".into());
+    }
+    let orientation = decoder.orientation().map_err(|e| e.to_string())?;
+    let mut image = image::DynamicImage::from_decoder(decoder).map_err(|e| e.to_string())?;
+    image.apply_orientation(orientation);
+    if image.width().max(image.height()) > 2048 {
+        image = image.resize(2048, 2048, image::imageops::FilterType::Lanczos3);
+    }
+    image = image::DynamicImage::ImageRgba8(image.to_rgba8());
+    let mut normalized = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut normalized, image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    let folder = reference_dir(document)?;
+    fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for p in [root(), root().join("references"), folder.clone()] {
+            fs::set_permissions(p, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+        }
+    }
+    let temporary = folder.join(format!("{}.tmp", generate_document_id()));
+    fs::write(&temporary, normalized.into_inner()).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+    }
+    let result = (|| {
+        let id = crate::media_store::digest(&temporary)?;
+        let path = folder.join(format!("{id}.png"));
+        fs::rename(&temporary, &path).map_err(|e| e.to_string())?;
+        Ok(
+            json!({"id":id,"width":image.width(),"height":image.height(),"bytes":fs::metadata(path).map_err(|e|e.to_string())?.len()}),
+        )
+    })();
+    let _ = fs::remove_file(temporary);
+    result
+}
+pub(crate) fn reference_bytes(document: &str, id: &str) -> Result<Vec<u8>, String> {
+    if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("Invalid reference image ID".into());
+    }
+    let path = reference_dir(document)?.join(format!("{id}.png"));
+    if fs::metadata(&path)
+        .map_err(|_| "Choose a reference uploaded for this document")?
+        .len()
+        > 25_000_000
+        || crate::media_store::digest(&path)? != id
+    {
+        return Err("Reference image failed its integrity check".into());
+    }
+    fs::read(path).map_err(|e| e.to_string())
+}
+#[cfg(test)]
+mod reference_tests {
+    use super::*;
+    #[test]
+    fn uploaded_reference_is_normalized_scoped_private_and_integrity_checked() {
+        let document = generate_document_id();
+        let other = generate_document_id();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgba8(24, 32)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let info = upload_reference(&document, png.get_ref()).unwrap();
+        let id = info["id"].as_str().unwrap();
+        let bytes = reference_bytes(&document, id).unwrap();
+        assert_eq!(
+            (info["width"].as_u64(), info["height"].as_u64()),
+            (Some(24), Some(32))
+        );
+        assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 24);
+        assert!(reference_bytes(&other, id).is_err());
+        assert!(reference_bytes("../escape", id).is_err());
+        assert!(reference_bytes(&document, "../escape").is_err());
+        let folder = reference_dir(&document).unwrap();
+        let path = folder.join(format!("{id}.png"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&folder).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        fs::write(&path, b"changed image").unwrap();
+        assert!(reference_bytes(&document, id).is_err());
+        fs::remove_dir_all(folder).unwrap();
+    }
+    #[test]
+    fn rejected_reference_never_creates_a_stored_input() {
+        let document = generate_document_id();
+        assert!(upload_reference(&document, b"not an image").is_err());
+        assert!(upload_reference(&document, &vec![0; 25_000_001]).is_err());
+        assert!(!reference_dir(&document).unwrap().exists());
+    }
+}
 pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Result<String, String> {
     let allowed = [
         "operation",
@@ -122,6 +256,8 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         "fps",
         "timeout",
         "reference_page",
+        "reference_id",
+        "reference_fit",
         "adapter",
         "provider",
         "query",
@@ -139,7 +275,7 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         .keys()
         .any(|k| !allowed.contains(&k.as_str()))
     {
-        return Err("Unknown generation field; references must come from a project page".into());
+        return Err("Unknown generation field; upload references or use a project page".into());
     }
     let operation = value["operation"]
         .as_str()
@@ -159,6 +295,13 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         return Err("Unsupported generation operation".into());
     }
     let _ = python()?;
+    if value.get("reference_id").is_some() && value.get("reference_page").is_some() {
+        return Err("Choose one reference source: uploaded image or current page".into());
+    }
+    let reference = value
+        .get("reference_id")
+        .map(|id| reference_bytes(&project.document_id, id.as_str().unwrap_or("")))
+        .transpose()?;
     let mut task = catalog()["models"]
         .as_array()
         .unwrap()
@@ -198,6 +341,11 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
     let snapshot = project.clone();
     value["document_id"] = json!(project.document_id);
     crate::media_service::begin(&project.document_id, revision, mode, move |folder| {
+        if let Some(bytes) = reference {
+            let path = folder.join("reference.png");
+            fs::write(&path, bytes).map_err(|e| e.to_string())?;
+            value["reference"] = json!(path);
+        }
         if let Some(page) = value["reference_page"].as_u64() {
             let bytes = crate::studio_catalog::thumbnail(&snapshot, page as usize, 1600)?;
             let path = folder.join("reference.png");

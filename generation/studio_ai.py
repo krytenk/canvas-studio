@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from studio_inference import validate,run as infer,REPO,select_files
 HERE=Path(__file__).resolve().parent
-VERSION='1.16.2';KAGGLE_VERSION='2.2.5'
+VERSION='1.17.0';KAGGLE_VERSION='2.2.5'
 def root():
  p=Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'canvas-studio/ai';p.mkdir(parents=True,exist_ok=True);p.chmod(0o700);return p
 def write(path,value):
@@ -48,7 +48,7 @@ def cli(args,timeout=90,max_length=5000):
  p=subprocess.run([*kaggle(),*args],env=env(),stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=timeout)
  if p.returncode:raise ValueError(redact(p.stderr or p.stdout or 'Kaggle CLI failed'))
  # The official push CLI can print an API error while exiting with status zero.
- if args[:2]==['kernels','push'] and re.search(r'(?im)^Kernel push error:',p.stdout):raise ValueError(redact(p.stdout))
+ if (args[:2]==['kernels','push'] and re.search(r'(?im)^Kernel push error:',p.stdout)) or (args[:2]==['datasets','create'] and re.search(r'(?im)^Dataset creation error:',p.stdout)):raise ValueError(redact(p.stdout))
  return redact(p.stdout,max_length)
 def catalog():
  data=json.loads((HERE/'catalog.json').read_text());custom=root()/'custom-models.json'
@@ -108,7 +108,7 @@ def register(v):
   cls=index.get('_class_name','')
   if cls not in SUPPORTED:raise ValueError('This repository needs a dedicated audited recipe; no remote Python will be executed')
   license=card.get('license_name') or card.get('license','unverified');use='commercial' if license in ('apache-2.0','mit','openrail++','creativeml-openrail-m') else 'research' if 'research' in license else 'review'
-  model=dict(id=id,provider=provider,name=id.split('/')[-1],task='video' if 'Video' in cls or cls in ('WanPipeline','LTXPipeline','LTX2Pipeline') else 'image',pipeline=cls,revision=sha,gated=meta.get('gated',False),weights_free=True,commercial=use,license=license,license_url='https://huggingface.co/'+id+'/tree/'+sha,url='https://huggingface.co/'+id,notes='Live-discovered recipe. Compatibility and memory use must be checked on your GPU; not an independently benchmarked recommendation.',safety_profile='declared_uncensored' if 'uncensored' in id.lower() else 'unknown',tier='discovered',steps=30,guidance=4.0,runnable=True,vram_gb=None,verified_at=time.strftime('%Y-%m-%d',time.gmtime()))
+  model=dict(id=id,provider=provider,name=id.split('/')[-1],task='video' if 'Video' in cls or cls in ('WanPipeline','LTXPipeline','LTX2Pipeline') else 'image',pipeline=cls,reference_required=cls in ('WanImageToVideoPipeline','LTXImageToVideoPipeline'),frame_multiple=8 if cls.startswith('LTX') else 4,revision=sha,gated=meta.get('gated',False),weights_free=True,commercial=use,license=license,license_url='https://huggingface.co/'+id+'/tree/'+sha,url='https://huggingface.co/'+id,notes='Live-discovered recipe. Compatibility and memory use must be checked on your GPU; not an independently benchmarked recommendation.',safety_profile='declared_uncensored' if 'uncensored' in id.lower() else 'unknown',tier='discovered',steps=30,guidance=4.0,runnable=True,vram_gb=None,verified_at=time.strftime('%Y-%m-%d',time.gmtime()))
  elif provider=='civitai':
   if not id.isdigit():raise ValueError('Use a Civitai model ID')
   meta=request_json('https://civitai.com/api/v1/models/'+id,settings().get('civitai_token'));version=next((x for x in meta.get('modelVersions',[]) if not v.get('version_id') or x['id']==v['version_id']),None)
@@ -129,12 +129,23 @@ def register(v):
 def spec(v):
  data=catalog();model=next((m for m in data['models'] if m['id']==v.get('model_id')),None)
  if not model:raise ValueError('Select a reviewed model from the catalog')
- result={'model':model,'prompt':v.get('prompt',''),'negative_prompt':v.get('negative_prompt',''),'width':v.get('width',model.get('default_width',768)),'height':v.get('height',model.get('default_height',448 if model['task']=='video' else 1024)),'steps':v.get('steps',model['steps']),'guidance':v.get('guidance',model['guidance']),'seed':v.get('seed',20261127),'precision':v.get('precision',model.get('preferred_precision','fp16')),'quantization':v.get('quantization','none'),'offload':v.get('offload',True),'device':v.get('device','cuda'),'content_mode':v.get('content_mode','flexible'),'use':v.get('use','commercial'),'license_acknowledged':bool(v.get('license_acknowledged')),'download_limit_gb':v.get('download_limit_gb',model.get('recommended_download_limit_gb',20)),'frames':v.get('frames',33),'fps':v.get('fps',8),'adapters':[]}
+ result={'model':model,'prompt':v.get('prompt',''),'negative_prompt':v.get('negative_prompt',''),'width':v.get('width',model.get('default_width',768)),'height':v.get('height',model.get('default_height',448 if model['task']=='video' else 1024)),'steps':v.get('steps',model['steps']),'guidance':v.get('guidance',model['guidance']),'seed':v.get('seed',20261127),'precision':v.get('precision',model.get('preferred_precision','fp16')),'quantization':v.get('quantization','none'),'offload':v.get('offload',True),'device':v.get('device','cuda'),'content_mode':v.get('content_mode','flexible'),'use':v.get('use','commercial'),'license_acknowledged':bool(v.get('license_acknowledged')),'download_limit_gb':v.get('download_limit_gb',model.get('recommended_download_limit_gb',20)),'frames':v.get('frames',model.get('default_frames',33)),'fps':v.get('fps',model.get('default_fps',8)),'adapters':[]}
  if v.get('adapter'):
   a=next((a for a in data['adapters'] if a['id']==v['adapter']),None)
   if not a:raise ValueError('Choose an available adapter')
   result['adapters']=[a];result['steps']=a['steps'];result['guidance']=a['guidance']
- if v.get('reference'):result['reference']=v['reference']
+ if v.get('reference_id') and not v.get('reference'):
+  document=v.get('document_id','');id=v['reference_id']
+  if not re.fullmatch('[A-Za-z0-9_-]{1,160}',document) or not isinstance(id,str) or not re.fullmatch('[a-f0-9]{64}',id):raise ValueError('Invalid document/reference identity')
+  path=root()/'references'/document/(id+'.png')
+  if not path.is_file() or path.stat().st_size>25_000_000 or hashlib.sha256(path.read_bytes()).hexdigest()!=id:raise ValueError('Choose a reference uploaded for this document')
+  result['reference']=str(path)
+ elif v.get('reference'):result['reference']=v['reference']
+ if result.get('reference'):
+  path=Path(result['reference'])
+  if not path.is_file() or path.stat().st_size>25_000_000:raise ValueError('Choose a reference image up to 25 MB')
+  result['reference_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()
+ result['reference_fit']=v.get('reference_fit','contain')
  return validate(result)
 def prepare(v,folder):
  remote=dict(v);remote['device']='cuda';s=spec(remote);timeout=v.get('timeout',1800)
@@ -143,14 +154,14 @@ def prepare(v,folder):
  username=connection_state()['kaggle_username'] or 'your-kaggle-username';slug='canvas-studio-'+folder.name[-24:].lower().replace('_','-');handle=username+'/'+slug
  portable=dict(s);reference=''
  if s.get('reference'):
-  p=Path(s['reference']);reference=base64.b64encode(p.read_bytes()).decode();portable['reference']='/kaggle/working/reference.png'
+  p=Path(s['reference']);shutil.copyfile(p,dest/'reference.png');reference=True;portable['reference']='/kaggle/working/reference.png'
  code=(HERE/'studio_inference.py').read_text();runtime_sha=hashlib.sha256(code.encode()).hexdigest()
  # Kaggle's GPU image currently carries torchao 0.10. PEFT 0.22 rejects that
  # optional backend even for ordinary LoRA. This runner uses bitsandbytes NF4,
  # not torchao; remove it only in this disposable remote notebook environment.
  setup="import sys,subprocess\nsubprocess.check_call([sys.executable,'-m','pip','uninstall','--yes','torchao'])\nsubprocess.check_call([sys.executable,'-m','pip','install','--quiet','diffusers==0.43.0','transformers==5.24.1','accelerate==1.16.0','safetensors','sentencepiece','protobuf','imageio[ffmpeg]','peft==0.22.0','bitsandbytes==0.50.2'])\nimport torch,platform\nprint('Python',platform.python_version(),'Torch',torch.__version__,'CUDA available',torch.cuda.is_available())\nif torch.cuda.is_available():print('GPU',torch.cuda.get_device_name(0))"
  program="import base64,json,os\nfrom pathlib import Path\nPath('/kaggle/working/studio_inference.py').write_bytes(base64.b64decode("+repr(base64.b64encode(code.encode()).decode())+"))\n"
- if reference:program+="Path('/kaggle/working/reference.png').write_bytes(base64.b64decode("+repr(reference)+"))\n"
+ if reference:program+="import hashlib,shutil\nexpected="+repr(s['reference_sha256'])+"\ntarget=Path('/kaggle/working/reference.png')\nif not target.exists():\n for candidate in Path('/kaggle/input').rglob('reference.png'):\n  if candidate.stat().st_size<=25000000 and hashlib.sha256(candidate.read_bytes()).hexdigest()==expected:\n   shutil.copyfile(candidate,target);break\nif not target.exists() or hashlib.sha256(target.read_bytes()).hexdigest()!=expected:raise ValueError('Attach the matching private reference input before running this notebook')\n"
  program+="try:\n from kaggle_secrets import UserSecretsClient\n os.environ['HF_TOKEN']=UserSecretsClient().get_secret('HF_TOKEN')\nexcept Exception:\n pass\n"
  program+="try:\n from kaggle_secrets import UserSecretsClient\n os.environ['CIVITAI_API_KEY']=UserSecretsClient().get_secret('CIVITAI_API_KEY')\nexcept Exception:\n pass\n"
  program+="from studio_inference import run\nSPEC=json.loads("+repr(json.dumps(portable))+ ")\nCACHE='/kaggle/temp/canvas-studio-model-cache'\ntry:\n run(SPEC,'/kaggle/working',CACHE,print)\nfinally:\n import shutil\n shutil.rmtree(CACHE,ignore_errors=True)\n"
@@ -158,9 +169,10 @@ def prepare(v,folder):
  cells=[{'cell_type':'markdown','metadata':{},'source':['# Canvas Studio private inference\nFinite GPU job. Model weights/licence, quota and access requirements still apply. No credentials are embedded.']},{'cell_type':'code','metadata':{},'execution_count':None,'outputs':[],'source':setup.splitlines(True)},{'cell_type':'code','metadata':{},'execution_count':None,'outputs':[],'source':program.splitlines(True)}]
  for i,cell in enumerate(cells):cell['id']='studio-'+str(i)
  write(dest/'inference.ipynb',{'nbformat':4,'nbformat_minor':5,'metadata':{'kernelspec':{'name':'python3','display_name':'Python 3','language':'python'}},'cells':cells})
+ if (dest/'inference.ipynb').stat().st_size>900_000:raise ValueError('Notebook source exceeds its safe upload limit; no GPU was submitted')
  # For a new notebook Kaggle derives its canonical slug from the title.
  write(dest/'kernel-metadata.json',{'id':handle,'title':slug,'code_file':'inference.ipynb','language':'python','kernel_type':'notebook','is_private':True,'enable_gpu':True,'enable_internet':True,'dataset_sources':[],'competition_sources':[],'kernel_sources':[],'model_sources':[]})
- manifest={'schema':1,'studio_version':VERSION,'kernel':handle,'timeout':timeout,'accelerator':'NvidiaTeslaT4','spec':portable,'runtime_sha256':runtime_sha,'requires_connection':not connection_state()['kaggle_configured'],'private':True,'upload_note':'Submitting uploads this prompt and any chosen reference to your private Kaggle notebook. Quota is controlled by Kaggle.'}
+ manifest={'schema':1,'studio_version':VERSION,'kernel':handle,'timeout':timeout,'accelerator':'NvidiaTeslaT4','spec':portable,'runtime_sha256':runtime_sha,'requires_connection':not connection_state()['kaggle_configured'],'private':True,'upload_note':'Submitting uploads this prompt to a private notebook and stores any reference as a private Kaggle input dataset. Quota is controlled by Kaggle. Private inputs remain on Kaggle until you remove them.'}
  write(dest/'manifest.json',manifest)
  with zipfile.ZipFile(folder/'motion-source.zip','w',zipfile.ZIP_DEFLATED) as z:
   for path in sorted(dest.iterdir()):z.write(path,path.name)
@@ -180,13 +192,53 @@ def preflight(v):
  gib=size/1024**3
  if gib>s['download_limit_gb']:raise ValueError(f'Model weights require {gib:.1f} GiB, above the {s["download_limit_gb"]} GiB download limit. Increase Download limit to at least {int(gib)+1} GiB or choose another model. No GPU notebook was submitted')
  return {'weight_bytes':size,'download_gib':round(gib,2),'checked_before_gpu':True}
+def reference_dataset(s,folder):
+ """Keep lossless input bytes outside Kaggle's one-megabyte notebook source limit."""
+ username=connection_state()['kaggle_username'];key=hashlib.sha256((username+'|'+s['reference_sha256']).encode()).hexdigest()[:24]
+ slug='canvas-studio-ref-'+key;handle=username+'/'+slug;cache=root()/'reference-datasets'/(key+'.json')
+ folder=Path(folder);upload=folder/'reference-upload';upload.mkdir(exist_ok=True)
+ metadata=folder/'reference-metadata';metadata.mkdir(exist_ok=True)
+ # An early record makes a timed-out upload discoverable without another dataset.
+ known=cache.exists()
+ if known:
+  saved=json.loads(cache.read_text())
+  if saved.get('id')!=handle or saved.get('sha256')!=s['reference_sha256']:raise ValueError('Private reference cache identity mismatch')
+ else:
+  shutil.copyfile(s['reference'],upload/'reference.png')
+  write(upload/'dataset-metadata.json',{'id':handle,'title':slug,'licenses':[{'name':'other'}],'description':'Private Canvas Studio generation input. No public redistribution licence is granted. All rights remain with the respective rights holders.','isPrivate':True})
+  write(cache,{'id':handle,'sha256':s['reference_sha256'],'state':'uploading'})
+  try:response=cli(['datasets','create','-p',str(upload),'--keep-tabular'],120)
+  except subprocess.TimeoutExpired:raise ValueError('Private reference upload is unconfirmed. Retry to check this same input; no GPU notebook was submitted') from None
+  except Exception:
+   cache.unlink(missing_ok=True);raise
+  if 'Your private Dataset is being created.' not in response or 'https://www.kaggle.com/datasets/'+handle not in response:raise ValueError('Kaggle did not confirm a private reference dataset. No GPU notebook was submitted')
+ deadline=time.monotonic()+120
+ while True:
+  status=json.loads(cli(['datasets','status',handle,'--format','json'],30))
+  state=status.get('status','').lower()
+  if state=='ready':break
+  if state in ('error','failed','deleted') or time.monotonic()>deadline:raise ValueError('Private reference input is not ready ('+state+'). Retry to check it before submitting; no GPU notebook was submitted')
+  time.sleep(2)
+ if status.get('current_version_number')!=1:raise ValueError('Private reference dataset was changed; use a new input rather than a different dataset version')
+ cli(['datasets','metadata',handle,'-p',str(metadata)],30)
+ info=json.loads((metadata/'dataset-metadata.json').read_text());info=info.get('info',info)
+ if info.get('isPrivate') is not True:raise ValueError('Reference dataset is not private. No GPU notebook was submitted')
+ result={'id':handle,'version':1,'private':True,'sha256':s['reference_sha256'],'state':'ready'};write(cache,result);return result
+
 def submit(v,folder):
  state=connection_state()
  if not state['kaggle_configured'] or not state['kaggle_username']:raise ValueError('Connect your Kaggle username and API token in Connections before submitting')
  estimate=preflight(v)
  result=prepare(v,folder);folder=Path(folder);meta=json.loads((folder/'inference/kernel-metadata.json').read_text());assert meta['is_private'] is True
+ reference=None
+ if spec(v).get('reference'):
+  reference=reference_dataset(spec(v),folder);meta['dataset_sources']=[reference['id']+'/'+str(reference['version'])];write(folder/'inference/kernel-metadata.json',meta)
+  manifest=json.loads((folder/'inference/manifest.json').read_text());manifest['reference_dataset']=reference;write(folder/'inference/manifest.json',manifest)
+  with zipfile.ZipFile(folder/'motion-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+   for path in sorted((folder/'inference').iterdir()):z.write(path,path.name)
+  result['package_bytes']=(folder/'motion-source.zip').stat().st_size
  requested=result['kernel'];run_id='run-'+hashlib.sha256(requested.encode()).hexdigest()[:24]
- record={'kernel':requested,'requested_kernel':requested,'model':spec(v)['model'],'request':v,'created_at':time.time(),'document_id':v.get('document_id'),'timeout':v.get('timeout',1800)}
+ record={'kernel':requested,'requested_kernel':requested,'model':spec(v)['model'],'request':v,'reference_sha256':spec(v).get('reference_sha256'),'reference_dataset':reference,'created_at':time.time(),'document_id':v.get('document_id'),'timeout':v.get('timeout',1800)}
  try:response=cli(['kernels','push','-p',str(folder/'inference'),'--timeout',str(v.get('timeout',1800)),'--accelerator','NvidiaTeslaT4'],120)
  except subprocess.TimeoutExpired:
   record['submission']='unconfirmed';write(root()/'runs'/(run_id+'.json'),record)
@@ -233,6 +285,7 @@ def remote_download(v,folder):
  task=record['model']['task'];source=dest/('output.png' if task=='image' else 'output.mp4');receipt=json.loads((dest/'receipt.json').read_text())
  if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest()!=receipt['output_sha256']:raise ValueError('Downloaded output is missing or does not match its receipt')
  if receipt.get('model',{}).get('id')!=record['model']['id'] or receipt.get('model',{}).get('revision')!=record['model']['revision']:raise ValueError('Downloaded receipt belongs to a different model/revision; nothing was imported')
+ if record.get('reference_sha256') and (not receipt.get('reference_used') or (receipt.get('reference') or {}).get('sha256')!=record['reference_sha256']):raise ValueError('Downloaded result used a different reference image; nothing was imported')
  shutil.copyfile(source,folder/('frame.png' if task=='image' else 'movie.mp4'));write(folder/'receipt.json',receipt)
  return {'task':task,'model':record['model']['id'],'kernel':record['kernel'],'run_id':v['run_id'],'receipt':receipt,'downloaded':True}
 def execute(v,folder,progress=lambda value:None):

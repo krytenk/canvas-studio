@@ -1,5 +1,17 @@
 # Changes
 
+## 1.17.0 — image-to-video and private first frames
+
+- Add Image to video in native/browser studios, with PNG/JPEG/WebP selection,
+  preview, rotation normalization, fit/pad or crop framing and document isolation.
+- Add a pinned small LTX 2B first-frame recipe, model-specific frames/FPS/decode
+  settings, reference fingerprints and guarded workspace uploads for MCP agents.
+- Send lossless references as versioned private Kaggle input datasets, outside
+  notebook source limits; verify remote privacy and reuse inputs across retries.
+- Prevent failed or pending reference replacements from using a previous persona.
+  Check source-reference, model/revision and output hashes before importing clips.
+
+
 ## 1.16.2 — Kaggle inference runtime and result integrity
 
 - Match unique private notebook titles to requested slugs, accept only confirmed

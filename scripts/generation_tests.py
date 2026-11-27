@@ -6,13 +6,15 @@ from unittest.mock import patch,MagicMock
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'generation'))
 import studio_ai as ai
 REAL_PREFLIGHT=ai.preflight
-from studio_inference import validate,select_files,component_overrides
+REAL_REFERENCE_DATASET=ai.reference_dataset
+from studio_inference import validate,select_files,component_overrides,prepare_reference,generator_device
 class GenerationTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.folder=Path(self.temp.name);self.env=patch.dict(os.environ,{'XDG_DATA_HOME':str(self.folder/'data')});self.env.start()
+  self.reference_patch=patch.object(ai,'reference_dataset',return_value={'id':'studio-test/private-reference','version':1,'private':True});self.reference_patch.start()
   self.preflight_patch=patch.object(ai,'preflight',return_value={'weight_bytes':1024,'download_gib':.01,'checked_before_gpu':True});self.preflight_patch.start()
   self.request={'model_id':'SG161222/RealVisXL_V5.0','prompt':'Fictional adult fashion creator in a tailored jacket, natural window light','width':512,'height':512,'steps':4,'seed':17,'precision':'fp16','content_mode':'flexible','document_id':'test-document'}
- def tearDown(self):self.preflight_patch.stop();self.env.stop();self.temp.cleanup()
+ def tearDown(self):self.reference_patch.stop();self.preflight_patch.stop();self.env.stop();self.temp.cleanup()
  def job(self,name='job-1234567890abcdef'):p=self.folder/name;p.mkdir(exist_ok=True);return p
  def test_validation_rejects_research_advertising_unsafe_limits_and_bad_adapter(self):
   for update in [{'model_id':'Qwen/Qwen-Image-2.1'},{'width':99999},{'frames':122,'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers'},{'seed':-1},{'quantization':'nf4'},{'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers','adapter':'sdxl-lightning-4'}]:
@@ -22,8 +24,70 @@ class GenerationTests(unittest.TestCase):
   for model in ai.catalog()['models']:
    if not model['runnable']:continue
    with self.subTest(model=model['id']):
-    s=ai.spec({**self.request,'model_id':model['id'],'steps':model['steps'],'guidance':model['guidance'],'use':'research','license_acknowledged':True})
+    extra={}
+    if model.get('reference_required'):
+     reference=self.folder/'first-frame.png';reference.write_bytes(b'fixture');extra['reference']=str(reference)
+    s=ai.spec({**self.request,'model_id':model['id'],'steps':model['steps'],'guidance':model['guidance'],'use':'research','license_acknowledged':True,**extra})
     self.assertEqual(s['model']['id'],model['id'])
+ def test_ltx_decode_generator_matches_execution_device_without_changing_verified_recipes(self):
+  self.assertEqual(generator_device({'pipeline':'LTXImageToVideoPipeline'},True),'cuda')
+  self.assertEqual(generator_device({'pipeline':'LTXPipeline'},True),'cuda')
+  self.assertEqual(generator_device({'pipeline':'LTXImageToVideoPipeline'},False),'cpu')
+  for pipeline in ('WanPipeline','StableDiffusionXLPipeline'):
+   self.assertEqual(generator_device({'pipeline':pipeline},True),'cpu')
+ def test_image_to_video_requires_reference_before_any_gpu_submission(self):
+  request={'model_id':'Lightricks/LTX-Video-0.9.5','prompt':'A woman blinks naturally'}
+  with self.assertRaisesRegex(ValueError,'reference'):ai.spec(request)
+  image=self.folder/'reference.png';image.write_bytes(b'fixture')
+  spec=ai.spec({**request,'reference':str(image)})
+  self.assertEqual((spec['width'],spec['height'],spec['frames'],spec['fps']),(384,512,49,24))
+  self.assertEqual(spec['reference_sha256'],hashlib.sha256(b'fixture').hexdigest())
+  with self.assertRaisesRegex(ValueError,'8n'):ai.spec({**request,'reference':str(image),'frames':13})
+  with self.assertRaisesRegex(ValueError,'contain or cover'):ai.spec({**request,'reference':str(image),'reference_fit':'stretch'})
+ def test_reference_identity_is_document_scoped_and_immutable(self):
+  id=hashlib.sha256(b'fixture').hexdigest();folder=ai.root()/'references'/'test-document';folder.mkdir(parents=True);p=folder/(id+'.png');p.write_bytes(b'fixture')
+  v={'model_id':'Lightricks/LTX-Video-0.9.5','prompt':'A woman blinks','reference_id':id,'document_id':'test-document'}
+  self.assertEqual(ai.spec(v)['reference_sha256'],id)
+  with self.assertRaises(ValueError):ai.spec({**v,'document_id':'other-document'})
+  with self.assertRaises(ValueError):ai.spec({**v,'document_id':'../escape'})
+  p.write_bytes(b'changed')
+  with self.assertRaises(ValueError):ai.spec(v)
+ def test_reference_fit_rotation_alpha_and_fingerprint(self):
+  from PIL import Image
+  path=self.folder/'source.png';Image.new('RGBA',(80,160),(255,0,0,128)).save(path)
+  s={'reference':str(path),'width':256,'height':256}
+  im,meta=prepare_reference(s);self.assertEqual(im.size,(256,256));self.assertEqual(im.getpixel((0,0)),(16,22,29));self.assertGreater(im.getpixel((128,128))[1],100)
+  self.assertEqual(meta['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
+  crop,other=prepare_reference({**s,'reference_fit':'cover'});self.assertGreater(crop.getpixel((0,0))[0],200);self.assertNotEqual(meta['frame_sha256'],other['frame_sha256'])
+  with self.assertRaisesRegex(ValueError,'changed'):prepare_reference({**s,'reference_sha256':'0'*64})
+  exif=Image.Exif();exif[274]=6;path=self.folder/'rotated.jpg';Image.new('RGB',(80,160),'blue').save(path,exif=exif)
+  _,rotated=prepare_reference({**s,'reference':str(path)});self.assertEqual((rotated['width'],rotated['height']),(160,80))
+ def test_reference_receipt_mismatch_rejects_even_valid_output_hash(self):
+  ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'})
+  image=self.folder/'reference.png';image.write_bytes(b'fixture');v={**self.request,'model_id':'Lightricks/LTX-Video-0.9.5','reference':str(image)}
+  with patch.object(ai,'cli',return_value='Kernel version 1 successfully pushed. Check https://www.kaggle.com/code/studio-test/reference-proof'):result=ai.submit(v,self.job())
+  folder=self.job('wrong-reference');model=ai.spec(v)['model']
+  def cli(args,*a):
+   if args[1]=='status':return 'complete'
+   dest=Path(args[args.index('-p')+1]);(dest/'output.mp4').write_bytes(b'output');(dest/'receipt.json').write_text(json.dumps({'model':model,'output_sha256':hashlib.sha256(b'output').hexdigest(),'reference_used':True,'reference':{'sha256':'0'*64}}));return 'downloaded'
+  with patch.object(ai,'cli',side_effect=cli),self.assertRaisesRegex(ValueError,'different reference'):ai.remote_download({'run_id':result['run_id'],'document_id':'test-document'},folder)
+  self.assertFalse((folder/'movie.mp4').exists())
+ def test_large_references_are_lossless_files_not_notebook_source(self):
+  image=self.folder/'reference.png';image.write_bytes(b'large-reference-fixture'*100000);job=self.job();ai.prepare({**self.request,'model_id':'Lightricks/LTX-Video-0.9.5','reference':str(image)},job)
+  self.assertLess((job/'inference/inference.ipynb').stat().st_size,900_000)
+  self.assertEqual((job/'inference/reference.png').read_bytes(),image.read_bytes())
+  with zipfile.ZipFile(job/'motion-source.zip') as z:self.assertEqual(z.read('reference.png'),image.read_bytes())
+ def test_reference_dataset_stays_private_and_does_not_grant_a_public_licence(self):
+  ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'});image=self.folder/'portrait.png';image.write_bytes(b'portrait');s=ai.spec({'model_id':'Lightricks/LTX-Video-0.9.5','prompt':'Blink naturally','reference':str(image)});job=self.job()
+  def fake(args,*a):
+   if args[1]=='create':
+    self.assertNotIn('-u',args);self.assertNotIn('--public',args);meta=json.loads((Path(args[args.index('-p')+1])/'dataset-metadata.json').read_text());self.assertEqual(meta['licenses'],[{'name':'other'}]);self.assertIs(meta['isPrivate'],True)
+    return 'Your private Dataset is being created. Please check progress at https://www.kaggle.com/datasets/'+meta['id']
+   if args[1]=='status':return json.dumps({'status':'ready','current_version_number':1})
+   (Path(args[args.index('-p')+1])/'dataset-metadata.json').write_text(json.dumps({'info':{'isPrivate':True}}));return 'downloaded'
+  with patch.object(ai,'cli',side_effect=fake) as cli:
+   result=REAL_REFERENCE_DATASET(s,job);self.assertIs(result['private'],True)
+   result=REAL_REFERENCE_DATASET(s,self.job('reuse-input'));self.assertEqual(sum(c.args[0][1]=='create' for c in cli.call_args_list),1)
  def test_agent_requests_share_reviewed_video_defaults(self):
   s=ai.spec({'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers','prompt':'A sunlit teacup'})
   self.assertEqual(s['precision'],'bf16');self.assertEqual(s['download_limit_gb'],32)

@@ -82,10 +82,12 @@ share document guards and result import; 42 editable templates cover creator,
 commerce, event, education and publishing work. CPU worker integration uses actual
 tiny random test weights. RealVisXL/Lightning image and Wan 2.1 1.3B video
 [acceptance](KAGGLE-GPU-ACCEPTANCE.md) passed on a connected Kaggle Tesla T4,
-including download, import, playback and portable recovery.
+including download, import, playback and portable recovery. Version 1.17 adds
+document-scoped first-frame upload, fit/crop framing, a practical LTX I2V recipe
+and the same guarded input operation for agents.
 
 Next priorities: broaden measured image/video quality and performance comparisons;
-add explicit uploaded reference-photo/multi-reference controls; curated compatible
+extend the uploaded first-frame workflow with multi-reference controls; curated compatible
 LoRA collections; automatic caption/transcription with licence-reviewed weights;
 then richer timeline transitions and audio controls. Multi-GPU dispatch, arbitrary
 custom-code models, VPS deployment and cloud storage require separate design and

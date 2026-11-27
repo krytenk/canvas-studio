@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.16.2**, with imported fonts, rich paragraphs, portable
+Current development: **1.17.0**, with imported fonts, rich paragraphs, portable
 projects, linked collections/CSV production, books, checked word searches and local browser editing. A 42-template / 95-page visual catalog includes editable Instagram
 carousels/stories and YouTube thumbnails/channel artwork.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
@@ -35,7 +35,7 @@ formats as a campaign bundle with the editable master and output manifest.
 
 [Generation studio](docs/GENERATION-STUDIO.md) adds reviewed free-weight image/video
 recipes, live Hugging Face/Civitai metadata discovery, a model/content-mode selector,
-reference-page snapshots, compatible adapters and optional NF4/offload controls.
+uploaded first-frame images and page snapshots, compatible adapters and optional NF4/offload controls.
 Prepare private finite Kaggle notebooks offline, or submit with your configured
 account and import completed PNG/MP4 assets into Design/Video studio. A separate
 [standalone Kaggle MCP](docs/KAGGLE-MCP.md) shares this backend. Credentials and model

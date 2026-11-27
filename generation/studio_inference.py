@@ -4,6 +4,7 @@ No remote Python, pickle weights, safety-checker removal or arbitrary shell comm
 import hashlib,json,os,re,shutil,time
 from pathlib import Path
 SUPPORTED={'StableDiffusionXLPipeline','StableDiffusionPipeline','Flux2KleinPipeline','Krea2Pipeline','FluxPipeline','ZImagePipeline','QwenImagePipeline','QwenImage21Pipeline','WanPipeline','WanImageToVideoPipeline','LTX2Pipeline','LTXPipeline','LTXImageToVideoPipeline'}
+REFERENCE_PIPELINES={'Flux2KleinPipeline','QwenImage21Pipeline','WanImageToVideoPipeline','LTXImageToVideoPipeline'}
 REPO=re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$')
 def validate(s):
  m=s['model']
@@ -29,7 +30,10 @@ def validate(s):
  if not 2<=float(s.get('download_limit_gb',20))<=100:raise ValueError('Set a 2–100 GB weight-download limit')
  for a in s.get('adapters',[]):
   if a.get('family')!=m['pipeline'] or not REPO.fullmatch(a.get('repository','')) or not re.fullmatch('[a-f0-9]{40}',a.get('revision','')) or not a.get('weight_name','').endswith('.safetensors') or '/' in a['weight_name']:raise ValueError('Choose a compatible pinned safetensors adapter')
- if s.get('reference') and m['pipeline'] not in ('Flux2KleinPipeline','QwenImage21Pipeline','WanImageToVideoPipeline','LTXImageToVideoPipeline'):raise ValueError('This recipe is text-only; choose an image-editing/image-to-video recipe for references')
+ if s.get('reference') and m['pipeline'] not in REFERENCE_PIPELINES:raise ValueError('This recipe is text-only; choose an image-editing/image-to-video recipe for references')
+ if m.get('reference_required') and not s.get('reference'):raise ValueError('Choose a reference image or the current page before image-to-video generation')
+ if s.get('reference_fit','contain') not in ('contain','cover'):raise ValueError('Choose contain or cover for reference framing')
+ if m['task']=='video' and m.get('frame_multiple') and (s['frames']-1)%m['frame_multiple']:raise ValueError('This model needs video frames in the form '+str(m['frame_multiple'])+'n+1')
  return s
 
 def select_files(siblings,precision):
@@ -98,8 +102,32 @@ def component_overrides(model,snapshot,selected,precision,torch,diffusers):
  if any(f.rfilename.startswith('vae/') and '.'+precision+'.safetensors' in f.rfilename for f in selected):options['variant']=precision
  return {'vae':diffusers.AutoencoderKLWan.from_pretrained(snapshot,**options)}
 
+def prepare_reference(s):
+ """Return the exact first-frame pixels and provenance; bounded before decoding."""
+ source=Path(s['reference']);original=source.read_bytes()
+ if len(original)>25_000_000:raise ValueError('Reference image exceeds 25 MB')
+ import io
+ from PIL import Image,ImageOps
+ with Image.open(io.BytesIO(original)) as raw:
+  if raw.width*raw.height>16_000_000:raise ValueError('Reference image exceeds 16 megapixels')
+  image=ImageOps.exif_transpose(raw).convert('RGBA')
+ background=Image.new('RGBA',image.size,'white');background.alpha_composite(image);image=background.convert('RGB')
+ original_size=image.size;fit=s.get('reference_fit','contain')
+ if fit=='cover':image=ImageOps.fit(image,(s['width'],s['height']),method=Image.Resampling.LANCZOS)
+ else:image=ImageOps.pad(image,(s['width'],s['height']),method=Image.Resampling.LANCZOS,color=(16,22,29))
+ prepared=io.BytesIO();image.save(prepared,format='PNG')
+ reference_info={'sha256':hashlib.sha256(original).hexdigest(),'frame_sha256':hashlib.sha256(prepared.getvalue()).hexdigest(),'width':original_size[0],'height':original_size[1],'frame_width':image.width,'frame_height':image.height,'fit':fit}
+ if s.get('reference_sha256') and reference_info['sha256']!=s['reference_sha256']:raise ValueError('Reference changed after preparation')
+ return image,reference_info
+
+def generator_device(model,cuda):
+ # LTX's timestep-conditioned decoder calls torch.randn directly on the GPU.
+ return 'cuda' if cuda and model['pipeline'] in ('LTXPipeline','LTXImageToVideoPipeline') else 'cpu'
+
 def run(s,output_dir,cache_dir,progress=lambda v:None):
- validate(s);import torch
+ validate(s)
+ reference_image,reference_info=prepare_reference(s) if s.get('reference') else (None,None)
+ import torch
  from huggingface_hub import HfApi,snapshot_download
  import diffusers
  output=Path(output_dir);output.mkdir(parents=True,exist_ok=True);cache=Path(cache_dir);cache.mkdir(parents=True,exist_ok=True)
@@ -141,14 +169,21 @@ def run(s,output_dir,cache_dir,progress=lambda v:None):
  if hasattr(pipe,'vae') and hasattr(pipe.vae,'enable_tiling'):pipe.vae.enable_tiling()
  if cuda and s.get('offload',True):pipe.enable_model_cpu_offload()
  else:pipe.to('cuda' if cuda else 'cpu')
- options=dict(prompt=s['prompt'],width=s['width'],height=s['height'],num_inference_steps=s['steps'],guidance_scale=float(s['guidance']),generator=torch.Generator(device='cpu').manual_seed(s['seed']))
+ options=dict(prompt=s['prompt'],width=s['width'],height=s['height'],num_inference_steps=s['steps'],guidance_scale=float(s['guidance']),generator=torch.Generator(device=generator_device(model,cuda)).manual_seed(s['seed']))
  import inspect
  params=inspect.signature(pipe.__call__).parameters
  if s.get('negative_prompt') and 'negative_prompt' in params:options['negative_prompt']=s['negative_prompt']
- if s.get('reference'):
-  from PIL import Image
-  options['image']=Image.open(s['reference']).convert('RGB')
- if model['task']=='video':options['num_frames']=s['frames']
+ if reference_image is not None:options['image']=reference_image
+ if model['task']=='video':
+  options['num_frames']=s['frames']
+  if 'output_type' in params:options['output_type']='np'
+  if 'frame_rate' in params:options['frame_rate']=s['fps']
+ for name in ('decode_timestep','decode_noise_scale'):
+  if name in params and name in model:options[name]=model[name]
+ if 'callback_on_step_end' in params:
+  def on_step(pipeline,index,timestep,values):
+   progress('Denoising step '+str(index+1)+'/'+str(s['steps']));return values
+  options['callback_on_step_end']=on_step
  progress('Generating '+model['task']);began=time.monotonic();result=pipe(**options)
  content_check='not added; model defaults preserved'
  samples=[result.images[0]] if model['task']=='image' else list(result.frames[0])
@@ -177,5 +212,5 @@ def run(s,output_dir,cache_dir,progress=lambda v:None):
  for name in ('diffusers','transformers','peft','accelerate','bitsandbytes'):
   try:versions[name]=importlib.metadata.version(name)
   except importlib.metadata.PackageNotFoundError:pass
- receipt={'schema':1,'model':model,'settings':{k:v for k,v in s.items() if k not in ('model','reference')},'reference_used':bool(s.get('reference')),'elapsed_seconds':round(time.monotonic()-began,2),'device':torch.cuda.get_device_name(0) if cuda else 'CPU','vae_precision':str(pipe.vae.dtype) if hasattr(pipe,'vae') else None,'packages':versions,'content_check':content_check,'diffusers_version':diffusers.__version__,'torch_version':torch.__version__,'output_sha256':hashlib.sha256(target.read_bytes()).hexdigest()}
+ receipt={'schema':1,'model':model,'settings':{k:v for k,v in s.items() if k not in ('model','reference')},'reference_used':bool(s.get('reference')),'reference':reference_info,'elapsed_seconds':round(time.monotonic()-began,2),'device':torch.cuda.get_device_name(0) if cuda else 'CPU','generator_device':str(options['generator'].device),'vae_precision':str(pipe.vae.dtype) if hasattr(pipe,'vae') else None,'packages':versions,'content_check':content_check,'diffusers_version':diffusers.__version__,'torch_version':torch.__version__,'output_sha256':hashlib.sha256(target.read_bytes()).hexdigest()}
  (output/'receipt.json').write_text(json.dumps(receipt,indent=2));return target,receipt

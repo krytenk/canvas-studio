@@ -1,4 +1,4 @@
-# Generation studio — 1.16.2
+# Generation studio — 1.17.0
 
 Canvas Studio has separate **Design**, **Generate** and **Video studio** workspaces.
 Generate works in desktop, browser and MCP. It searches model metadata, prepares
@@ -131,6 +131,52 @@ Status, logs and output requests target the recorded notebook version. Downloads
 must match the recorded model/revision and their receipt checksum before import.
 Selecting an incompatible model clears the previous model's adapter.
 
+## Image to video and uploaded references
+
+Choose **Generate → Image to video** in desktop or browser, then choose a first
+frame. PNG, JPEG and WebP uploads are limited to 25 MB / 16 megapixels. The app
+applies EXIF rotation, strips source metadata, normalizes to an immutable PNG and
+limits the longest edge to 2048 pixels. Uploading does not add or replace a design
+layer. The reference is scoped to this document and previewed before submission.
+Selecting a replacement clears the old selection immediately; failed uploads
+cannot silently reuse a previous influencer. Submission waits for upload completion.
+
+The initial practical recipe is [LTX Video 2B 0.9.5](https://huggingface.co/Lightricks/LTX-Video-0.9.5),
+pinned to `e58e28c39631af4d1468ee57a853764e11c1d37e`. This is a small first-frame
+baseline with Open RAIL-M terms, not a claim of leading current video quality.
+Its starting settings are BF16, CPU offload, 384 × 512, 49 frames, 24 fps,
+30 steps, guidance 3 and a 32 GiB download allowance. The model downloads about
+23.65 GiB. It requires `8n+1` frames; text-only video recipes retain their own defaults.
+The runner passes the chosen frame rate and model-specific decode settings.
+See the [Diffusers LTX recipe](https://huggingface.co/docs/diffusers/en/api/pipelines/ltx_video).
+
+**Keep whole image** preserves the composition with padded edges. **Fill frame**
+crops the edges to the output aspect ratio. Match the video dimensions to a
+portrait for influencer footage. Describe modest subject/camera motion; a first
+frame conditions the clip but does not guarantee perfect identity in every frame.
+Alternatively select **Current design page** to animate a composed page snapshot.
+Text-only recipes never receive a retained reference selection.
+
+Kaggle rejects large notebook source, so reference pixels travel as a separate
+**private input dataset**, not an inline base64 image. The app uses the official
+CLI's private creation path, retains rights under an `other` metadata label,
+checks actual remote privacy, reuses the same hashed input on retries and pins
+its dataset version. Private inputs remain on Kaggle until you remove them there;
+clearing a local reference or task does not delete remote data. Preparing a ZIP
+is offline: it includes the lossless reference file and a small notebook; app
+submission attaches the private input automatically. Manual use requires attaching
+the matching reference as a private input. Neither notebooks nor ZIPs embed keys.
+
+The receipt records the source image checksum, prepared first-frame checksum,
+framing and dimensions. Download verifies the reference fingerprint as well as
+model/revision and output hash. Completed MP4s import into Video studio normally.
+
+The live editor MCP uploads a scoped workspace file with `studio_generation`
+`operation: "reference", reference_path: "portrait.jpg"`; use the returned
+`reference_id` with prepare/submit/generate and `reference_fit: "contain"` or
+`"cover"`. Paths are allowed only for this explicit upload operation. The standalone
+Kaggle adapter can use an already uploaded reference ID with the same document ID.
+
 ## Storage, reproducibility and limits
 
 - Default tool/runtime/cache location is `~/.local/share/canvas-studio/`, outside
@@ -170,7 +216,7 @@ Kaggle Tesla T4 runs, download, page/timeline import and video playback. The tes
 512 × 320 / 33-frame / 20-step Wan clip took 468.64 seconds of inference, plus
 setup, weights and queueing. See the scoped
 [GPU acceptance report](KAGGLE-GPU-ACCEPTANCE.md). Production recipes still need
-individual account/hardware validation. Per-model quality benchmarks, uploaded reference-photo UI,
+individual account/hardware validation. Per-model quality benchmarks, multi-reference conditioning,
 arbitrary community LoRA stacks, multi-GPU sharding and remote stop automation
 remain future work. No claim of having benchmarked every production recipe is made.
 

@@ -2,7 +2,7 @@
 No GPU submission or production weight downloads. --local-proof runs a tiny random
 CPU pipeline as an integration fixture, not an example of model image quality.
 """
-import argparse,base64,json,os,select,subprocess,sys,time,zipfile,urllib.request
+import argparse,base64,hashlib,json,os,select,subprocess,sys,time,zipfile,urllib.request
 from pathlib import Path
 from mcp_smoke import Client,META
 from media_smoke import launch,wait
@@ -36,7 +36,20 @@ def run(binary,chrome=None,local=False):
   with zipfile.ZipFile(work/'reference.zip') as z:
    manifest=json.loads(z.read('manifest.json'));assert manifest['spec']['reference']=='/kaggle/working/reference.png'
    code=''.join(json.loads(z.read('inference.ipynb'))['cells'][2]['source']);assert 'reference.png' in code
-  report['mcp']='15 tools; private pinned notebooks; compatible adapter; explicit reference; stale guards; research and missing-connection failures'
+  from PIL import Image
+  reference_file=work/'portrait-fixture.png';Image.new('RGB',(96,128),'#1e7467').save(reference_file)
+  original_guard=c.guard();original_elements=c.call('studio_document')['elements']
+  uploaded=job('reference',reference_path='portrait-fixture.png');assert c.guard()==original_guard
+  assert c.call('studio_document')['elements']==original_elements
+  c.call('studio_generation',{**c.guard(),'operation':'reference','reference_path':'/etc/passwd'},error=True)
+  c.call('studio_generation',{**c.guard(),'operation':'prepare','model_id':'Lightricks/LTX-Video-0.9.5','prompt':'A gentle camera move','reference_id':'0'*64},error=True)
+  clip=job('prepare',model_id='Lightricks/LTX-Video-0.9.5',prompt='A gentle camera move',reference_id=uploaded['id'],reference_fit='cover');save(clip,'image-to-video.zip')
+  with zipfile.ZipFile(work/'image-to-video.zip') as z:
+   manifest=json.loads(z.read('manifest.json'));assert manifest['spec']['reference_sha256']==uploaded['id']
+   assert hashlib.sha256(z.read('reference.png')).hexdigest()==uploaded['id']
+   assert len(z.read('inference.ipynb'))<900000 and manifest['spec']['reference_fit']=='cover'
+  report['mcp']='15 tools; workspace reference upload without document mutation; private pinned notebooks; reference fingerprints; cross-document/path/stale guards'
+
   # A full, real inference through the app worker and import/undo/cold-open path.
   if local:
    data=qa/folder/'canvas-studio/ai';data.mkdir(parents=True,exist_ok=True)
@@ -78,8 +91,10 @@ def run(binary,chrome=None,local=False):
     assert page.locator('#ai-models .ai-model-card').count()>=8
     page.locator('#ai-models .ai-model-card').filter(has_text='FLUX.2 Klein').first.click()
     page.locator('#ai-form [name=prompt]').fill('A ceramic vase on a sunlit wooden desk')
+    source_count=page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').count()
     with page.expect_download() as dl:
      page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
+     page.wait_for_function("(before) => [...document.querySelectorAll('#ai-jobs button')].filter(b=>b.textContent==='Save inference ZIP').length>before",arg=source_count,timeout=20000)
      page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').first.click(timeout=20000)
     dl.value.save_as(work/'browser-inference.zip');assert zipfile.is_zipfile(work/'browser-inference.zip')
     page.locator('#ai-form details summary').click()
@@ -91,6 +106,33 @@ def run(binary,chrome=None,local=False):
     assert page.locator('#ai-form [name=download_limit_gb]').input_value()=='32'
     assert page.locator('#ai-form [name=adapter]').input_value()=='', 'Image-only adapter leaked into the video request'
     page.screenshot(path=qa/'generation-video.png',full_page=True)
+    page.locator('#ai-i2v-tab').click();page.wait_for_function("() => aiSelected().pipeline==='LTXImageToVideoPipeline'")
+    assert [page.locator('#ai-form [name='+key+']').input_value() for key in ('width','height','steps','frames','fps')]==['384','512','30','49','24']
+    before=page.locator('#ai-jobs article').count()
+    page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
+    page.wait_for_function("() => document.querySelector('#message').textContent.includes('Choose a reference image')")
+    assert page.locator('#ai-jobs article').count()==before
+    with page.expect_file_chooser() as fc:page.locator('#ai-reference-choose').click()
+    fc.value.set_files(reference_file);page.locator('#ai-reference-preview').wait_for(state='visible')
+    page.wait_for_function("() => document.querySelector('#ai-reference-preview').complete")
+    assert page.locator('#ai-reference-status').inner_text().endswith('ready')
+    page.locator('#ai-form [name=reference_fit]').select_option('cover')
+    page.screenshot(path=qa/'image-to-video-reference.png',full_page=True)
+    source_count=page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').count()
+    with page.expect_download() as dl:
+     page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
+     page.wait_for_function("(before) => [...document.querySelectorAll('#ai-jobs button')].filter(b=>b.textContent==='Save inference ZIP').length>before",arg=source_count,timeout=20000)
+     page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').first.click(timeout=20000)
+    dl.value.save_as(work/'browser-image-to-video.zip')
+    with zipfile.ZipFile(work/'browser-image-to-video.zip') as z:
+     spec=json.loads(z.read('manifest.json'))['spec'];assert spec['reference_fit']=='cover' and spec['reference_sha256']==hashlib.sha256(z.read('reference.png')).hexdigest()
+    invalid=work/'invalid-reference.png';invalid.write_bytes(b'not an image')
+    with page.expect_file_chooser() as fc:page.locator('#ai-reference-choose').click()
+    fc.value.set_files(invalid)
+    page.wait_for_function("() => !aiReferenceBusy && !aiReferenceId && document.querySelector('#ai-reference-preview').hidden")
+    assert 'reference_id' not in page.evaluate("aiRequest('prepare')"), 'Failed replacement kept the previous persona selected'
+    page.locator('#ai-video-tab').click();assert 'reference_id' not in page.evaluate("aiRequest('prepare')")
+
     page.locator('#ai-edit').click();page.wait_for_selector('#film-studio:visible')
     page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('#generation-studio:visible')
     page.locator('#ai-image-tab').click();page.locator('#ai-connections summary').click()
@@ -101,7 +143,7 @@ def run(binary,chrome=None,local=False):
     page.screenshot(path=qa/'generation-narrow.png',full_page=True)
     assert not errors,errors
     context.close();browser.close()
-   report['browser']='Image/video selectors; source ZIP download; Video studio handoff; unsaved connection draft; narrow layout; no JS errors'
+   report['browser']='Image/text-video/image-video selectors; required first frame; private upload preview; fit/crop; lossless source ZIP; no reference leakage to text-only models; video handoff; credential drafts; narrow layout; no JS errors'
   # Clearing video history must never silently erase the separate generation work.
   edit([{'action':'film_setup','width':320,'height':192,'fps':24,'duration':24}])
   frame=c.call('studio_media_render',{**c.guard(),'mode':'frame','frame':0});wait(c,frame)
