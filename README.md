@@ -40,8 +40,9 @@ Prepare private finite Kaggle notebooks offline, or submit with your configured
 account and import completed PNG/MP4 assets into Design/Video studio. A separate
 [standalone Kaggle MCP](docs/KAGGLE-MCP.md) shares this backend. Credentials and model
 weights stay outside projects/Git. Free weights do not imply unlimited free GPU
-quota or universal commercial rights. Production GPU acceptance needs a connected
-Kaggle account; real CPU integration uses tiny random test weights.
+quota or universal commercial rights. Real Tesla T4 image/video generation, download,
+import and playback passed the scoped [GPU acceptance checks](docs/KAGGLE-GPU-ACCEPTANCE.md).
+Other recipes need individual validation; CPU integration uses tiny random test weights.
 
 The expanded library includes creator media kits, UGC rate cards, lookbooks,
 reel covers, case studies, shot lists/storyboards, content planners, educational

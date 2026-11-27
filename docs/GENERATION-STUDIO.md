@@ -165,8 +165,10 @@ Its optional `--local-proof` performs actual CPU safetensors inference through t
 worker and verifies import, undo/redo and portable cold-open, using tiny random
 test weights. This is integration evidence, not an image-quality demonstration.
 
-RealVisXL + SDXL Lightning image execution has passed a real private Kaggle
-Tesla T4 run, download and page import. See the scoped
+RealVisXL + SDXL Lightning images and Wan 2.1 1.3B video have passed real private
+Kaggle Tesla T4 runs, download, page/timeline import and video playback. The tested
+512 × 320 / 33-frame / 20-step Wan clip took 468.64 seconds of inference, plus
+setup, weights and queueing. See the scoped
 [GPU acceptance report](KAGGLE-GPU-ACCEPTANCE.md). Production recipes still need
 individual account/hardware validation. Per-model quality benchmarks, uploaded reference-photo UI,
 arbitrary community LoRA stacks, multi-GPU sharding and remote stop automation

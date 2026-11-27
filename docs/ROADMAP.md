@@ -73,17 +73,18 @@ Imported meshes, spine artwork and editable per-clip 3D geometry remain future
 work. The Linux desktop installer also repairs stale Camva 1.0.1 launchers.
 
 
-### Stage F — implemented in 1.16; production GPU acceptance pending connection
+### Stage F — implemented; scoped GPU acceptance passed in 1.16.2
 
 [Generation studio](GENERATION-STUDIO.md) adds live model metadata discovery,
 reviewed pinned safetensors recipes, local finite inference, private bounded Kaggle
 notebooks and a shared [Kaggle MCP](KAGGLE-MCP.md). Native/browser/agent workflows
 share document guards and result import; 42 editable templates cover creator,
 commerce, event, education and publishing work. CPU worker integration uses actual
-tiny random test weights. Kaggle production image/video acceptance requires the
-user's eligible account and GPU quota.
+tiny random test weights. RealVisXL/Lightning image and Wan 2.1 1.3B video
+[acceptance](KAGGLE-GPU-ACCEPTANCE.md) passed on a connected Kaggle Tesla T4,
+including download, import, playback and portable recovery.
 
-Next priorities: benchmark practical image/video recipes on the connected GPU;
+Next priorities: broaden measured image/video quality and performance comparisons;
 add explicit uploaded reference-photo/multi-reference controls; curated compatible
 LoRA collections; automatic caption/transcription with licence-reviewed weights;
 then richer timeline transitions and audio controls. Multi-GPU dispatch, arbitrary

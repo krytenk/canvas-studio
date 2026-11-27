@@ -86,6 +86,7 @@ def run(binary,chrome=None,local=False):
     page.locator('#ai-form [name=adapter]').select_option('sdxl-lightning-4')
     page.locator('#ai-video-tab').click();page.wait_for_function("() => aiSelected().task==='video'")
     assert not page.locator('#ai-video-options').is_hidden()
+    assert [page.locator('#ai-form [name='+key+']').input_value() for key in ('width','height','steps')]==['512','320','20']
     assert page.locator('#ai-form [name=precision]').input_value()=='bf16'
     assert page.locator('#ai-form [name=download_limit_gb]').input_value()=='32'
     assert page.locator('#ai-form [name=adapter]').input_value()=='', 'Image-only adapter leaked into the video request'

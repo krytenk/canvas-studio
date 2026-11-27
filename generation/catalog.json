@@ -126,7 +126,7 @@
     {
       "id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
       "provider": "huggingface",
-      "name": "Wan 2.1 \u00b7 1.3B",
+      "name": "Wan 2.1 · 1.3B",
       "task": "video",
       "pipeline": "WanPipeline",
       "parameters_b": 1.3,
@@ -142,8 +142,8 @@
       "gated": false,
       "weights_free": true,
       "verified_at": "2026-11-27",
-      "notes": "Smaller video baseline: official card reports 8.19 GB VRAM at 480p. Start small on free GPUs. Publisher recipe uses BF16 with an FP32 decoder; original weights download about 27 GiB.",
-      "steps": 30,
+      "notes": "Smaller video baseline: official card reports 8.19 GB VRAM at 480p. Start small on free GPUs. Publisher recipe uses BF16 with an FP32 decoder; original weights download about 27 GiB. Tested T4 preset: 512 × 320, 33 frames, 20 steps; about 8 minutes inference plus setup.",
+      "steps": 20,
       "guidance": 5.0,
       "runnable": true,
       "weight_profiles": [
@@ -154,12 +154,14 @@
       "downloads": 423312,
       "preferred_precision": "bf16",
       "download_gib": 26.94,
-      "recommended_download_limit_gb": 32
+      "recommended_download_limit_gb": 32,
+      "default_width": 512,
+      "default_height": 320
     },
     {
       "id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
       "provider": "huggingface",
-      "name": "Wan 2.2 \u00b7 5B",
+      "name": "Wan 2.2 · 5B",
       "task": "video",
       "pipeline": "WanPipeline",
       "parameters_b": 5,
@@ -430,7 +432,7 @@
   "adapters": [
     {
       "id": "sdxl-lightning-4",
-      "name": "SDXL Lightning \u00b7 4-step LoRA",
+      "name": "SDXL Lightning · 4-step LoRA",
       "repository": "ByteDance/SDXL-Lightning",
       "revision": "c9a24f48e1c025556787b0c58dd67a091ece2e44",
       "weight_name": "sdxl_lightning_4step_lora.safetensors",

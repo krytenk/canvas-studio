@@ -27,6 +27,7 @@ class GenerationTests(unittest.TestCase):
  def test_agent_requests_share_reviewed_video_defaults(self):
   s=ai.spec({'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers','prompt':'A sunlit teacup'})
   self.assertEqual(s['precision'],'bf16');self.assertEqual(s['download_limit_gb'],32)
+  self.assertEqual((s['width'],s['height'],s['steps']),(512,320,20))
   explicit=ai.spec({'model_id':s['model']['id'],'prompt':'A sunlit teacup','precision':'fp16','download_limit_gb':40})
   self.assertEqual(explicit['precision'],'fp16');self.assertEqual(explicit['download_limit_gb'],40)
  def test_package_private_pinned_and_has_no_credentials(self):

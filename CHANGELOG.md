@@ -16,6 +16,9 @@
 - Check pinned weight sizes before GPU submission. Use recipe-specific Wan BF16 /
   32 GiB defaults, probe BF16 execution before downloading, and keep remote model
   caches outside persisted notebook outputs.
+- Verify real private Tesla T4 image/video generation through the app, result
+  download, editable page/timeline import, playback and portable project recovery.
+  Record tested settings and actual timings in the GPU acceptance report.
 
 
 ## 1.16.1 — Browser connection and model search repair
