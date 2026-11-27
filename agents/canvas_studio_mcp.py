@@ -19,7 +19,7 @@ import sys
 import tempfile
 from urllib.parse import urlencode
 
-VERSION = "1.15.0"
+VERSION = "1.16.0"
 PROTOCOL = "2026-07-28"
 LEGACY = "2025-11-25"
 PREFIX = "io.modelcontextprotocol/"
@@ -120,6 +120,15 @@ TOOLS += [
     tool('studio_media_render','Render a film snapshot','Queue preview (max edge 640), full-size MP4 export, single-frame review, or media proxy. Returns job ID immediately; editing can continue. Integer frames; frame mode requires frame, proxy requires asset. The source revision stays attached to the result.',obj({**GUARD,'mode':enum('preview','export','frame','proxy','source'),'frame':{'type':'integer','minimum':0},'asset':STRING},(*GUARD,'mode'))),
     tool('studio_media_job','Inspect, cancel or save a film job','Status returns progress/error/source_revision; cancel stops encoding while preserving the project. Save downloads a complete MP4 or frame PNG to workspace, atomic and no overwrite by default. Jobs are scoped to the current document. For all actions use a fresh current document revision; output retains its own source revision.',obj({**GUARD,'id':STRING,'operation':enum('status','cancel','save','source'),'path':STRING,'overwrite':BOOL},(*GUARD,'id','operation')))
 ]
+
+# The same generation bridge is shared with native/browser controls. Credentials
+# are deliberately absent from this schema and never returned by state calls.
+GENERATION={"operation":enum("models","search","register","prepare","submit","generate","remote_status","download"),"model_id":STRING,"provider":enum("huggingface","civitai"),"id":STRING,"query":STRING,"type":enum("Checkpoint","LORA"),"include_mature":BOOL,"task":enum("image","video"),"run_id":STRING,"prompt":STRING,"negative_prompt":STRING,"precision":enum("fp16","bf16","fp32"),"quantization":enum("none","nf4"),"content_mode":enum("standard","flexible"),"use":enum("commercial","research"),"device":enum("cuda","cpu"),"offload":BOOL,"license_acknowledged":BOOL,"adapter":STRING,"reference_page":PAGE}
+for key in ("width","height","steps","seed","frames","fps","timeout","download_limit_gb","version_id"):GENERATION[key]={"type":"integer","minimum":0}
+GENERATION['guidance']=NUMBER
+TOOLS.append(tool('studio_generation','Image/video generation and Kaggle GPU jobs','Inspect reviewed free-weight recipes, search Hugging Face/Civitai, register a compatible safetensors recipe, prepare a private Kaggle notebook, submit a finite GPU run, generate locally, inspect a remote run or download its result. models reads connection booleans, never secrets. Review licence/hardware fit first. Submit uploads this prompt and reference page to your private Kaggle notebook and consumes your available GPU quota. No paid inference endpoints are used. Queue tasks return a local job ID; inspect/cancel/save with studio_media_job. ai_import(id,page/start) imports a completed result. Remote runs return run_id; remote cancellation is through Kaggle controls.',obj({**GUARD,**GENERATION},(*GUARD,'operation'))))
+TOOLS[-1]['annotations']['openWorldHint']=True
+ACTION['action']['enum'].append('ai_import')
 
 
 def validate(value, schema, path="arguments"):
@@ -244,6 +253,9 @@ class Studio:
             if revision != after["revision"]: raise ValueError("Design changed during preview; try again")
             return {"document_id": a["document_id"], "revision": revision, "page": a.get("page", 0)}, data
         if name == "studio_preflight": return self.http("/api/preflight",guard=read_guard), None
+        if name == 'studio_generation':
+            if a['operation']=='models':return self.http('/api/ai/state',guard=read_guard),None
+            return self.http('/api/ai/action',{k:v for k,v in a.items() if k not in GUARD},a),None
         if name == 'studio_mockup_render':return self.http('/api/mockups/render',{'id':a['id'],'movie':a.get('movie',False)},a),None
         if name == 'studio_media_render':
             mode=a['mode']
@@ -256,11 +268,11 @@ class Studio:
             status=self.http('/api/film/job?'+urlencode({'id':a['id']}),guard=read_guard)
             if a['operation']=='status':return status,None
             if a['operation']=='cancel':return self.http('/api/film/cancel',{'id':a['id']},a),None
-            if status['state']!='complete' or status['mode'] not in ('frame','export','preview','source','mockup_poster','mockup_movie'):raise ValueError('Job has no completed frame/movie')
+            if status['state']!='complete' or status['mode'] not in ('frame','export','preview','source','mockup_poster','mockup_movie','ai_image','ai_video','ai_package','ai_task'):raise ValueError('Job has no completed frame/movie')
             if 'path' not in a:raise ValueError('Save requires workspace path')
             path=self.scoped(a['path'])
-            source=a['operation']=='source' or status['mode']=='source'
-            if path.suffix.lower()!=('.zip' if source else '.png' if status['mode'] in ('frame','mockup_poster') else '.mp4'):raise ValueError('Use .zip for source, .png for frame or .mp4 for movie')
+            source=a['operation']=='source' or status['mode'] in ('source','ai_package')
+            if path.suffix.lower()!=('.zip' if source else '.png' if status['mode'] in ('frame','mockup_poster','ai_image') else '.mp4'):raise ValueError('Use .zip for source, .png for frame or .mp4 for movie')
             if not path.parent.is_dir():raise ValueError('Create output folder first')
             data,revision=self.http(('/api/film/source?' if source else '/api/film/output?')+urlencode({'id':a['id']}),guard=read_guard,raw=True)
             self.guard(a)

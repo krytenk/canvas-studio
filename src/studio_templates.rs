@@ -23,8 +23,10 @@ fn descriptor(
         accent,
     }
 }
+#[path = "extended_templates.rs"]
+mod extended_templates;
 pub(super) fn catalog() -> Vec<TemplateDescriptor> {
-    vec![
+    let mut templates = vec![
         descriptor(
             "ig_editorial",
             "The Editorial",
@@ -169,7 +171,9 @@ pub(super) fn catalog() -> Vec<TemplateDescriptor> {
             DesignFormat::Logo,
             LILAC,
         ),
-    ]
+    ];
+    templates.extend(extended_templates::catalog());
+    templates
 }
 fn rect(
     p: &mut Project,
@@ -334,6 +338,9 @@ fn art(p: &mut Project, page: &mut CanvasPage, x: f32, y: f32, w: f32, h: f32, a
     }
 }
 pub(super) fn build(id: &str) -> Option<Project> {
+    if let Some(p) = extended_templates::build(id) {
+        return Some(p);
+    }
     let tpl = catalog().into_iter().find(|t| t.id == id)?;
     let mut p = new_template_project(tpl.name, tpl.format);
     let w = p.width;

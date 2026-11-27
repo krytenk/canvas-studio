@@ -41,6 +41,7 @@ jobs:
         run: |
           python3 -m venv .ui-venv
           .ui-venv/bin/pip install -r scripts/ui-requirements.txt
+          .ui-venv/bin/pip install kaggle==2.2.5 six==1.17.0
           .ui-venv/bin/python -m playwright install --with-deps chromium
       - name: Exercise the browser editor and native window
         run: |
@@ -59,11 +60,21 @@ jobs:
           python3 scripts/desktop_launcher_smoke.py
           .ui-venv/bin/python scripts/mockup_smoke.py --binary target/release/canvas-studio --chrome chromium
           .ui-venv/bin/python scripts/native_mockup_smoke.py --binary target/release/canvas-studio
+      - name: Exercise generation notebooks, model guards and browser studio
+        run: |
+          .ui-venv/bin/python scripts/generation_tests.py
+          .ui-venv/bin/python scripts/native_generation_smoke.py --binary target/release/canvas-studio
+          CANVAS_STUDIO_AI_PYTHON="$PWD/.ui-venv/bin/python" .ui-venv/bin/python scripts/generation_smoke.py --binary target/release/canvas-studio --chrome chromium
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: canvas-studio-ui-proofs
           path: |
+            qa/native-generation/*.png
+            qa/native-generation/result.txt
+            qa/native-generation/native.log
+            qa/generation/*.png
+            qa/generation/report.json
             qa/native-mockups/*.png
             qa/native-mockups/result.txt
             qa/native-mockups/native.log

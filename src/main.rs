@@ -11,6 +11,8 @@ mod campaign_ui;
 mod canvas_view;
 mod document_ops;
 mod exporter;
+mod generation;
+mod generation_ui;
 mod imported_fonts;
 mod layout_commands;
 #[cfg(test)]
@@ -86,6 +88,7 @@ use crate::templates::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WorkspaceScreen {
     HomeHub,
+    GenerationStudio,
     StudioEditor,
 }
 
@@ -247,6 +250,7 @@ struct CanvasStudioApp {
     queued_save: Option<bool>,
     queued_history: i8,
     film_ui: crate::media_ui::FilmUi,
+    generation_ui: crate::generation_ui::GenerationUi,
     mockup_ui: crate::mockup_ui::MockupUi,
 }
 
@@ -333,6 +337,7 @@ impl CanvasStudioApp {
             queued_save: None,
             queued_history: 0,
             film_ui: Default::default(),
+            generation_ui: Default::default(),
             mockup_ui: Default::default(),
         };
         app.recovery_available = app.latest_available_recovery_path().is_some();
@@ -1444,6 +1449,9 @@ impl CanvasStudioApp {
         self.render_top_navigation_bar(ctx);
 
         match self.screen {
+            WorkspaceScreen::GenerationStudio => {
+                egui::CentralPanel::default().show(ctx, |ui| self.render_generation_studio(ui));
+            }
             WorkspaceScreen::HomeHub => {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     self.render_home_hub(ui);
@@ -1589,7 +1597,7 @@ impl CanvasStudioApp {
                         .clicked()
                     {
                         self.screen = match self.screen {
-                            WorkspaceScreen::HomeHub => WorkspaceScreen::StudioEditor,
+                            WorkspaceScreen::HomeHub | WorkspaceScreen::GenerationStudio => WorkspaceScreen::StudioEditor,
                             WorkspaceScreen::StudioEditor => WorkspaceScreen::HomeHub,
                         };
                     }
@@ -1602,14 +1610,17 @@ impl CanvasStudioApp {
                     }
                     if ui
                         .selectable_label(
-                            self.screen == WorkspaceScreen::StudioEditor,
-                            "Studio",
+                            self.screen == WorkspaceScreen::StudioEditor && self.active_dock!=DockTab::Film,
+                            "Design",
                         )
                         .clicked()
                     {
                         self.screen = WorkspaceScreen::StudioEditor;
+                        if self.active_dock==DockTab::Film{self.active_dock=DockTab::Templates;}
                     }
 
+                    if ui.selectable_label(self.screen==WorkspaceScreen::GenerationStudio,"Generate").clicked(){self.screen=WorkspaceScreen::GenerationStudio;}
+                    if ui.selectable_label(self.screen==WorkspaceScreen::StudioEditor&&self.active_dock==DockTab::Film,"Video studio").clicked(){self.screen=WorkspaceScreen::StudioEditor;self.active_dock=DockTab::Film;}
                     ui.separator();
 
                     // Undo / Redo with revision-accurate dirty reconciliation
@@ -4725,7 +4736,7 @@ mod tests {
     #[test]
     fn test_studio_catalog_and_magic_resize() {
         let templates = available_templates();
-        assert_eq!(templates.len(), 18);
+        assert_eq!(templates.len(), 42);
         for tpl in &templates {
             let proj = build_template_project(tpl.id);
             let (ew, eh) = tpl.format.dimensions();

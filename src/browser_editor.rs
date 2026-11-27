@@ -193,6 +193,8 @@ fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request
                 "/bundle.js",
                 "/film.js",
                 "/motion.js",
+                "/generation.js",
+                "/generation.css",
                 "/mockups.js",
                 "/mockup-scene.js",
                 "/vendor/three.module.js",
@@ -855,6 +857,7 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                 )?,
                 s.revision,
             )),
+            "/api/ai/state" => Ok(Response::value(crate::generation::state(), s.revision)),
             "/api/film/motion-tools" => Ok(Response::value(crate::motion::doctor(), s.revision)),
             "/api/film/source" => {
                 let id = query(&req.path, "id").ok_or("Missing job")?;
@@ -1061,6 +1064,19 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         return Ok(r);
     }
     match base {
+        "/api/ai/connections" => {
+            let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
+            crate::generation::save_connections(v)?;
+            return Ok(Response::value(crate::generation::state(), s.revision));
+        }
+        "/api/ai/action" => {
+            let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
+            let id = crate::generation::start(&s.project, s.revision, v)?;
+            return Ok(Response::value(
+                json!({"id":id,"source_revision":s.revision}),
+                s.revision,
+            ));
+        }
         "/api/mockups/render" => {
             let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
             let id = crate::mockups::start(
@@ -1355,6 +1371,14 @@ fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Sessi
             "/" => Some((
                 "text/html; charset=utf-8",
                 include_bytes!("../web/index.html").as_slice(),
+            )),
+            "/generation.js" => Some((
+                "application/javascript",
+                include_bytes!("../web/generation.js").as_slice(),
+            )),
+            "/generation.css" => Some((
+                "text/css",
+                include_bytes!("../web/generation.css").as_slice(),
             )),
             "/mockups.js" => Some((
                 "application/javascript",

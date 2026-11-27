@@ -4,8 +4,8 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.15.0**, with imported fonts, rich paragraphs, portable
-projects, linked collections/CSV production, books, checked word searches and local browser editing. An 18-design visual catalog includes editable Instagram
+Current development: **1.16.0**, with imported fonts, rich paragraphs, portable
+projects, linked collections/CSV production, books, checked word searches and local browser editing. A 42-template / 95-page visual catalog includes editable Instagram
 carousels/stories and YouTube thumbnails/channel artwork.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
 the [practical workflow guide](docs/PRINT-STUDIO-GUIDE.md).
@@ -31,6 +31,23 @@ groups stay linked. Browser layout tools support multi-selection, grouping,
 proportional resizing, alignment/distribution and keyboard nudges. Download all
 formats as a campaign bundle with the editable master and output manifest.
 
+## Images, video generation and GPU notebooks
+
+[Generation studio](docs/GENERATION-STUDIO.md) adds reviewed free-weight image/video
+recipes, live Hugging Face/Civitai metadata discovery, a model/content-mode selector,
+reference-page snapshots, compatible adapters and optional NF4/offload controls.
+Prepare private finite Kaggle notebooks offline, or submit with your configured
+account and import completed PNG/MP4 assets into Design/Video studio. A separate
+[standalone Kaggle MCP](docs/KAGGLE-MCP.md) shares this backend. Credentials and model
+weights stay outside projects/Git. Free weights do not imply unlimited free GPU
+quota or universal commercial rights. Production GPU acceptance needs a connected
+Kaggle account; real CPU integration uses tiny random test weights.
+
+The expanded library includes creator media kits, UGC rate cards, lookbooks,
+reel covers, case studies, shot lists/storyboards, content planners, educational
+worksheets, service menus, event newspapers, book/recipe pages and lead magnets.
+Each is an editable starting system with sample copy to replace before publishing.
+
 ## Film, sound and captions
 
 [Film studio](docs/FILM-STUDIO.md) adds local media import, frame-based tracks,
@@ -45,7 +62,7 @@ Three.js books, boxes and stationery with listing PNGs and six-second reveals.
 
 ## Design with a coding agent
 
-The local [STDIO MCP adapter](docs/AGENT-CONTROL.md) exposes 14 tools to inspect,
+The local [STDIO MCP adapter](docs/AGENT-CONTROL.md) exposes 15 tools to inspect,
 compose, preview, check and export the live browser design. It uses explicit
 document/revision checks, atomic undoable batches and a scoped local workspace.
 No model subscription or Python package is required by the adapter itself.

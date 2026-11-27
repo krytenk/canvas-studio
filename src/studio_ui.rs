@@ -32,16 +32,14 @@ impl CanvasStudioApp {
             .width(240.)
             .selected_text(&self.studio_category)
             .show_ui(ui, |ui| {
-                for category in [
-                    "All templates",
-                    "Instagram",
-                    "YouTube",
-                    "Print",
-                    "Presentation",
-                    "Identity",
-                    "Data",
-                ] {
-                    ui.selectable_value(&mut self.studio_category, category.to_string(), category);
+                let mut categories = vec!["All templates".to_string()];
+                for t in available_templates() {
+                    if !categories.iter().any(|c| c == t.category) {
+                        categories.push(t.category.to_string());
+                    }
+                }
+                for category in categories {
+                    ui.selectable_value(&mut self.studio_category, category.to_string(), &category);
                 }
             });
         ui.add_space(12.);

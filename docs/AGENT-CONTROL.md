@@ -194,3 +194,17 @@ editability, units and the version-4 feature guard.
 The adapter exposes **14 tools**, adding `studio_mockup_render` and shared typed
 mockup commands. See [Product studio](PRODUCT-MOCKUPS.md#agent-control) for the
 complete book/box/card workflow and the snapshot semantics of poster/Film placement.
+
+
+## 1.16 image/video generation
+
+The adapter now exposes **15 tools**, adding `studio_generation` for reviewed model
+metadata, discovery/registration, private notebook preparation, finite Kaggle
+submission/status/download and local inference. Model/provider calls return a job
+ID; poll with `studio_media_job`, save a source ZIP or PNG/MP4 output, then use
+`studio_edit` with `{ "action": "ai_import", "id": "JOB", "page": 0 }`
+(images) or `start` (video). All calls retain document/revision guards; references
+are explicit live page snapshots, never agent-supplied host paths. Credentials
+are configured privately through the app and never returned by a tool. See
+[model/compute limits](GENERATION-STUDIO.md) and the optional
+[standalone Kaggle adapter](KAGGLE-MCP.md).

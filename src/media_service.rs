@@ -17,6 +17,16 @@ use std::{
 static ACTIVE: AtomicUsize = AtomicUsize::new(0);
 static SCRIPT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 const WORKER_FILES: &[(&str, &str)] = &[
+    ("studio_ai.py", include_str!("../generation/studio_ai.py")),
+    (
+        "studio_inference.py",
+        include_str!("../generation/studio_inference.py"),
+    ),
+    (
+        "studio_ai_worker.py",
+        include_str!("../generation/studio_ai_worker.py"),
+    ),
+    ("catalog.json", include_str!("../generation/catalog.json")),
     ("worker.py", include_str!("../media/studio_media.py")),
     (
         "studio_motion.py",
@@ -451,18 +461,26 @@ pub fn output(id: &str, doc: &str) -> Result<PathBuf, String> {
         "source",
         "mockup_poster",
         "mockup_movie",
+        "ai_image",
+        "ai_video",
+        "ai_package",
     ]
     .contains(&state["mode"].as_str().unwrap_or(""))
     {
         return Err("This job has no movie/frame output".into());
     }
-    Ok(id_path(id)?.join(if state["mode"] == "source" {
-        "motion-source.zip"
-    } else if state["mode"] == "frame" || state["mode"] == "mockup_poster" {
-        "frame.png"
-    } else {
-        "movie.mp4"
-    }))
+    Ok(id_path(id)?.join(
+        if state["mode"] == "source" || state["mode"] == "ai_package" {
+            "motion-source.zip"
+        } else if state["mode"] == "frame"
+            || state["mode"] == "mockup_poster"
+            || state["mode"] == "ai_image"
+        {
+            "frame.png"
+        } else {
+            "movie.mp4"
+        },
+    ))
 }
 pub fn jobs(doc: &str) -> Result<Value, String> {
     let mut out = Vec::new();

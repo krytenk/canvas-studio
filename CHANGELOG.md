@@ -1,5 +1,22 @@
 # Changes
 
+## 1.16.0 — Generation studio and expanded template systems
+
+- Separate Design, Generate and Video studio workspaces in desktop/browser; 24 new
+  editable template systems bring the library to 42 templates across 95 pages.
+- Fourteen pinned image/video model entries, live Hugging Face/Civitai metadata
+  discovery and supported safetensors registration, with licence and hardware
+  distinctions rather than an unverified quality ranking.
+- Shared finite Diffusers runner, explicit page references, SDXL Lightning adapter,
+  FP16/BF16/FP32, transformer NF4 and CPU offload controls; PNG/MP4 result import.
+- Private bounded Kaggle notebooks, optional official CLI submission/status/output,
+  checksum receipts and secret-free source ZIPs; credentials stored outside Git.
+- Fifteenth live-editor MCP tool and standalone six-tool Kaggle adapter.
+- Rights/content-mode/document guards, notebook/worker/browser integration checks
+  and actual tiny CPU inference acceptance. Production GPU runs require a connected
+  eligible Kaggle account and remain a separate acceptance step.
+
+
 ## 1.15.0 — Product studio and desktop repair
 
 - Three.js book, product-box and card-stack scenes with native editable front/back

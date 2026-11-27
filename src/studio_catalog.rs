@@ -71,8 +71,8 @@ mod tests {
                 400
             );
         }
-        assert_eq!(catalog.len(), 18);
-        assert_eq!(pages, 27);
+        assert_eq!(catalog.len(), 42);
+        assert_eq!(pages, 27 + 68);
         assert_eq!(
             templates::build_template_project("ig_carousel").pages.len(),
             5

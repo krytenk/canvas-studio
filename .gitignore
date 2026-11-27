@@ -3,7 +3,7 @@
 /canvas-studio.exe
 /dist/
 /artifacts/
-/qa/
+/qa
 *.log
 .DS_Store
 Thumbs.db

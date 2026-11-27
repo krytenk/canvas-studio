@@ -71,3 +71,21 @@ six-second reveals enter Film as video snapshots. Portable v5 scenes, stale
 render checks and deterministic rendering/seek workflows cover acceptance.
 Imported meshes, spine artwork and editable per-clip 3D geometry remain future
 work. The Linux desktop installer also repairs stale Camva 1.0.1 launchers.
+
+
+### Stage F — implemented in 1.16; production GPU acceptance pending connection
+
+[Generation studio](GENERATION-STUDIO.md) adds live model metadata discovery,
+reviewed pinned safetensors recipes, local finite inference, private bounded Kaggle
+notebooks and a shared [Kaggle MCP](KAGGLE-MCP.md). Native/browser/agent workflows
+share document guards and result import; 42 editable templates cover creator,
+commerce, event, education and publishing work. CPU worker integration uses actual
+tiny random test weights. Kaggle production image/video acceptance requires the
+user's eligible account and GPU quota.
+
+Next priorities: benchmark practical image/video recipes on the connected GPU;
+add explicit uploaded reference-photo/multi-reference controls; curated compatible
+LoRA collections; automatic caption/transcription with licence-reviewed weights;
+then richer timeline transitions and audio controls. Multi-GPU dispatch, arbitrary
+custom-code models, VPS deployment and cloud storage require separate design and
+resource decisions. Keep model caches external to the repository.
