@@ -13,6 +13,9 @@
 - Check downloaded model/revision as well as output checksum. Show model names,
   remote GPU states and readable redacted failure logs in the studio.
 - Clear incompatible image-only adapters when selecting a video model.
+- Check pinned weight sizes before GPU submission. Use recipe-specific Wan BF16 /
+  32 GiB defaults, probe BF16 execution before downloading, and keep remote model
+  caches outside persisted notebook outputs.
 
 
 ## 1.16.1 — Browser connection and model search repair

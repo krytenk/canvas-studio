@@ -107,7 +107,10 @@ def run(s,output_dir,cache_dir,progress=lambda v:None):
  if cuda and not torch.cuda.is_available():raise ValueError('No CUDA GPU is available here. Choose Kaggle, connect a GPU machine, or use CPU explicitly')
  dtype={'fp16':torch.float16,'bf16':torch.bfloat16,'fp32':torch.float32}[s['precision']]
  if not cuda and dtype!=torch.float32:raise ValueError('CPU inference requires FP32')
- if cuda and dtype==torch.bfloat16 and not torch.cuda.is_bf16_supported():raise ValueError('This GPU lacks native BF16 support. Choose FP16 or another model; two T4s do not combine their VRAM')
+ if cuda and dtype==torch.bfloat16 and not torch.cuda.is_bf16_supported():raise ValueError('BF16 is unavailable in this CUDA runtime. Choose a compatible recipe; two T4s do not combine their VRAM')
+ if cuda and dtype==torch.bfloat16:
+  try:torch.mm(torch.ones((2,2),device='cuda',dtype=dtype),torch.ones((2,2),device='cuda',dtype=dtype)).sum().item()
+  except RuntimeError as error:raise ValueError('BF16 matrix operations are not supported by this GPU/runtime; no weights were downloaded') from error
  model=s['model'];token=os.environ.get('HF_TOKEN') or None;cls=getattr(diffusers,model['pipeline'],None)
  if cls is None:raise ValueError('The installed Diffusers version does not yet support this pipeline')
  if model.get('provider')=='civitai':

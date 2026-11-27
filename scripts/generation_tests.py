@@ -5,12 +5,14 @@ from types import SimpleNamespace
 from unittest.mock import patch,MagicMock
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'generation'))
 import studio_ai as ai
+REAL_PREFLIGHT=ai.preflight
 from studio_inference import validate,select_files,component_overrides
 class GenerationTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.folder=Path(self.temp.name);self.env=patch.dict(os.environ,{'XDG_DATA_HOME':str(self.folder/'data')});self.env.start()
+  self.preflight_patch=patch.object(ai,'preflight',return_value={'weight_bytes':1024,'download_gib':.01,'checked_before_gpu':True});self.preflight_patch.start()
   self.request={'model_id':'SG161222/RealVisXL_V5.0','prompt':'Fictional adult fashion creator in a tailored jacket, natural window light','width':512,'height':512,'steps':4,'seed':17,'precision':'fp16','content_mode':'flexible','document_id':'test-document'}
- def tearDown(self):self.env.stop();self.temp.cleanup()
+ def tearDown(self):self.preflight_patch.stop();self.env.stop();self.temp.cleanup()
  def job(self,name='job-1234567890abcdef'):p=self.folder/name;p.mkdir(exist_ok=True);return p
  def test_validation_rejects_research_advertising_unsafe_limits_and_bad_adapter(self):
   for update in [{'model_id':'Qwen/Qwen-Image-2.1'},{'width':99999},{'frames':122,'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers'},{'seed':-1},{'quantization':'nf4'},{'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers','adapter':'sdxl-lightning-4'}]:
@@ -30,7 +32,7 @@ class GenerationTests(unittest.TestCase):
   self.assertEqual(meta['title'],meta['id'].split('/')[1])
   notebook=json.loads((job/'inference/inference.ipynb').read_text());joined='\n'.join(''.join(c['source']) for c in notebook['cells'])
   self.assertEqual(len({cell['id'] for cell in notebook['cells']}),3)
-  setup=''.join(notebook['cells'][1]['source']);self.assertIn("'uninstall','--yes','torchao'",setup);self.assertIn('peft==0.22.0',setup)
+  setup=''.join(notebook['cells'][1]['source']);self.assertIn("'uninstall','--yes','torchao'",setup);self.assertIn('peft==0.22.0',setup);self.assertIn('/kaggle/temp/canvas-studio-model-cache',joined);self.assertNotIn('/kaggle/working/model-cache',joined)
   for secret in ('secret-kaggle-test-value','secret-hf-test-value','secret-civi-test-value'):self.assertNotIn(secret,joined)
   for c in notebook['cells']:
    if c['cell_type']=='code':ast.parse(''.join(c['source']))
@@ -59,6 +61,14 @@ class GenerationTests(unittest.TestCase):
    path=Path(args[args.index('-p')+1]);(path/'output.png').write_bytes(b'file');(path/'receipt.json').write_text(json.dumps({'output_sha256':'bad'}));return 'downloaded'
   with patch.object(ai,'cli',side_effect=fake_cli),self.assertRaises(ValueError):ai.remote_download({'run_id':result['run_id'],'document_id':'test-document'},folder)
   self.assertFalse((folder/'frame.png').exists())
+ def test_download_budget_is_checked_before_submitting_a_gpu_notebook(self):
+  meta={'siblings':[{'rfilename':'model_index.json','size':100},{'rfilename':'unet/diffusion_pytorch_model.safetensors','size':27*1024**3}]}
+  ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'})
+  with patch.object(ai,'request_json',return_value=meta):
+   with self.assertRaisesRegex(ValueError,'No GPU notebook was submitted'):REAL_PREFLIGHT(self.request)
+   self.assertGreater(REAL_PREFLIGHT({**self.request,'download_limit_gb':32})['download_gib'],26)
+  with patch.object(ai,'preflight',side_effect=ValueError('Download budget too small')),patch.object(ai,'cli') as cli,self.assertRaises(ValueError):ai.submit(self.request,self.job())
+  cli.assert_not_called()
  def test_zero_exit_push_error_or_auth_help_is_not_a_successful_submission(self):
   process=SimpleNamespace(returncode=0,stdout='Kernel push error: GPU unavailable',stderr='')
   with patch.object(ai.subprocess,'run',return_value=process),self.assertRaisesRegex(ValueError,'GPU unavailable'):ai.cli(['kernels','push'])

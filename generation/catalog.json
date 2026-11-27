@@ -142,7 +142,7 @@
       "gated": false,
       "weights_free": true,
       "verified_at": "2026-11-27",
-      "notes": "Smaller video baseline: official card reports 8.19 GB VRAM at 480p. Start small on free GPUs.",
+      "notes": "Smaller video baseline: official card reports 8.19 GB VRAM at 480p. Start small on free GPUs. Publisher recipe uses BF16 with an FP32 decoder; original weights download about 27 GiB.",
       "steps": 30,
       "guidance": 5.0,
       "runnable": true,
@@ -151,7 +151,10 @@
         "bf16",
         "fp32"
       ],
-      "downloads": 423312
+      "downloads": 423312,
+      "preferred_precision": "bf16",
+      "download_gib": 26.94,
+      "recommended_download_limit_gb": 32
     },
     {
       "id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",

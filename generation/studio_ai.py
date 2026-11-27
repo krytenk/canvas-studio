@@ -3,7 +3,8 @@ All network hosts/commands are fixed providers; model data and prompts are never
 """
 import argparse,base64,hashlib,json,os,re,shutil,subprocess,sys,time,urllib.parse,urllib.request,urllib.error,zipfile
 from pathlib import Path
-from studio_inference import validate,run as infer,REPO
+from types import SimpleNamespace
+from studio_inference import validate,run as infer,REPO,select_files
 HERE=Path(__file__).resolve().parent
 VERSION='1.16.2';KAGGLE_VERSION='2.2.5'
 def root():
@@ -128,7 +129,7 @@ def register(v):
 def spec(v):
  data=catalog();model=next((m for m in data['models'] if m['id']==v.get('model_id')),None)
  if not model:raise ValueError('Select a reviewed model from the catalog')
- result={'model':model,'prompt':v.get('prompt',''),'negative_prompt':v.get('negative_prompt',''),'width':v.get('width',768),'height':v.get('height',1024),'steps':v.get('steps',model['steps']),'guidance':v.get('guidance',model['guidance']),'seed':v.get('seed',20261127),'precision':v.get('precision','fp16'),'quantization':v.get('quantization','none'),'offload':v.get('offload',True),'device':v.get('device','cuda'),'content_mode':v.get('content_mode','flexible'),'use':v.get('use','commercial'),'license_acknowledged':bool(v.get('license_acknowledged')),'download_limit_gb':v.get('download_limit_gb',20),'frames':v.get('frames',33),'fps':v.get('fps',8),'adapters':[]}
+ result={'model':model,'prompt':v.get('prompt',''),'negative_prompt':v.get('negative_prompt',''),'width':v.get('width',768),'height':v.get('height',1024),'steps':v.get('steps',model['steps']),'guidance':v.get('guidance',model['guidance']),'seed':v.get('seed',20261127),'precision':v.get('precision',model.get('preferred_precision','fp16')),'quantization':v.get('quantization','none'),'offload':v.get('offload',True),'device':v.get('device','cuda'),'content_mode':v.get('content_mode','flexible'),'use':v.get('use','commercial'),'license_acknowledged':bool(v.get('license_acknowledged')),'download_limit_gb':v.get('download_limit_gb',20),'frames':v.get('frames',33),'fps':v.get('fps',8),'adapters':[]}
  if v.get('adapter'):
   a=next((a for a in data['adapters'] if a['id']==v['adapter']),None)
   if not a:raise ValueError('Choose an available adapter')
@@ -152,9 +153,8 @@ def prepare(v,folder):
  if reference:program+="Path('/kaggle/working/reference.png').write_bytes(base64.b64decode("+repr(reference)+"))\n"
  program+="try:\n from kaggle_secrets import UserSecretsClient\n os.environ['HF_TOKEN']=UserSecretsClient().get_secret('HF_TOKEN')\nexcept Exception:\n pass\n"
  program+="try:\n from kaggle_secrets import UserSecretsClient\n os.environ['CIVITAI_API_KEY']=UserSecretsClient().get_secret('CIVITAI_API_KEY')\nexcept Exception:\n pass\n"
- program+="from studio_inference import run\nSPEC=json.loads("+repr(json.dumps(portable))+ ")\ntry:\n run(SPEC,'/kaggle/working','/kaggle/working/model-cache',print)\nfinally:\n import shutil\n shutil.rmtree('/kaggle/working/model-cache',ignore_errors=True)\n"
+ program+="from studio_inference import run\nSPEC=json.loads("+repr(json.dumps(portable))+ ")\nCACHE='/kaggle/temp/canvas-studio-model-cache'\ntry:\n run(SPEC,'/kaggle/working',CACHE,print)\nfinally:\n import shutil\n shutil.rmtree(CACHE,ignore_errors=True)\n"
  # Do not retain huge model caches as notebook outputs.
- program+="import shutil\nshutil.rmtree('/kaggle/working/model-cache',ignore_errors=True)\n"
  cells=[{'cell_type':'markdown','metadata':{},'source':['# Canvas Studio private inference\nFinite GPU job. Model weights/licence, quota and access requirements still apply. No credentials are embedded.']},{'cell_type':'code','metadata':{},'execution_count':None,'outputs':[],'source':setup.splitlines(True)},{'cell_type':'code','metadata':{},'execution_count':None,'outputs':[],'source':program.splitlines(True)}]
  for i,cell in enumerate(cells):cell['id']='studio-'+str(i)
  write(dest/'inference.ipynb',{'nbformat':4,'nbformat_minor':5,'metadata':{'kernelspec':{'name':'python3','display_name':'Python 3','language':'python'}},'cells':cells})
@@ -165,9 +165,25 @@ def prepare(v,folder):
  with zipfile.ZipFile(folder/'motion-source.zip','w',zipfile.ZIP_DEFLATED) as z:
   for path in sorted(dest.iterdir()):z.write(path,path.name)
  return {'source_available':True,'kernel':handle,'private':True,'model':s['model']['id'],'requires_connection':manifest['requires_connection'],'package_bytes':(folder/'motion-source.zip').stat().st_size,'note':manifest['upload_note']}
+def preflight(v):
+ """Check weight access and byte budget locally before reserving any Kaggle GPU."""
+ s=spec(v);model=s['model']
+ if model.get('provider')=='civitai':size=model.get('weight_bytes',0)
+ else:
+  token=settings().get('hf_token') or os.environ.get('HF_TOKEN')
+  meta=request_json('https://huggingface.co/api/models/'+model['id']+'/revision/'+model['revision']+'?blobs=true',token)
+  files=[SimpleNamespace(rfilename=f['rfilename'],size=f.get('size') or (f.get('lfs') or {}).get('size')) for f in meta.get('siblings',[])]
+  selected=select_files(files,s['precision'])
+  if any(f.rfilename.endswith('.safetensors') and not f.size for f in selected):raise ValueError('The provider did not report all weight sizes. Check the model before submitting a GPU run')
+  size=sum(f.size or 0 for f in selected)
+ if not size:raise ValueError('Weight size could not be verified; no GPU notebook was submitted')
+ gib=size/1024**3
+ if gib>s['download_limit_gb']:raise ValueError(f'Model weights require {gib:.1f} GiB, above the {s["download_limit_gb"]} GiB download limit. Increase Download limit to at least {int(gib)+1} GiB or choose another model. No GPU notebook was submitted')
+ return {'weight_bytes':size,'download_gib':round(gib,2),'checked_before_gpu':True}
 def submit(v,folder):
  state=connection_state()
  if not state['kaggle_configured'] or not state['kaggle_username']:raise ValueError('Connect your Kaggle username and API token in Connections before submitting')
+ estimate=preflight(v)
  result=prepare(v,folder);folder=Path(folder);meta=json.loads((folder/'inference/kernel-metadata.json').read_text());assert meta['is_private'] is True
  requested=result['kernel'];run_id='run-'+hashlib.sha256(requested.encode()).hexdigest()[:24]
  record={'kernel':requested,'requested_kernel':requested,'model':spec(v)['model'],'request':v,'created_at':time.time(),'document_id':v.get('document_id'),'timeout':v.get('timeout',1800)}
@@ -187,7 +203,7 @@ def submit(v,folder):
   with zipfile.ZipFile(folder/'motion-source.zip','w',zipfile.ZIP_DEFLATED) as z:
    for path in sorted((folder/'inference').iterdir()):z.write(path,path.name)
   result['package_bytes']=(folder/'motion-source.zip').stat().st_size
- return {**result,'submitted':True,'kernel':handle,'run_id':run_id,'version':record['version'],'url':'https://www.kaggle.com/code/'+handle,'response':response,'note':'Finite private notebook submitted. Poll status, then download its output. A local Cancel button does not stop an already submitted remote notebook; use Kaggle controls.'}
+ return {**result,'submitted':True,'kernel':handle,'run_id':run_id,'version':record['version'],'preflight':estimate,'url':'https://www.kaggle.com/code/'+handle,'response':response,'note':'Finite private notebook submitted. Poll status, then download its output. A local Cancel button does not stop an already submitted remote notebook; use Kaggle controls.'}
 def run_record(id,document):
  if not re.fullmatch('run-[a-f0-9]{24}',id):raise ValueError('Invalid inference identity')
  p=root()/'runs'/(id+'.json');data=json.loads(p.read_text())

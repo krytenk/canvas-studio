@@ -78,8 +78,9 @@ VRAM numbers in the interface are planning estimates unless explicitly attribute
 to a publisher above. Resolution, frames, activations, offload and runtime versions
 change actual use. **Two T4s do not pool their VRAM automatically.** Larger recipes
 are selectable for preparation/research, with hardware warnings, rather than sold
-as guaranteed T4 fits. FP16 is the practical T4 choice; BF16 checks native hardware
-support before loading. CPU requires FP32 and is very slow for real models.
+as guaranteed T4 fits. Precision is recipe-specific: SDXL defaults to FP16; Wan 2.1 defaults to
+BF16 with an FP32 decoder. BF16 checks the CUDA runtime and executes a small
+CUDA matrix operation before downloading weights. CPU requires FP32 and is very slow for real models.
 
 **NF4** quantizes supported Diffusers transformer components while loading; it
 does not magically shrink the original download. SDXL/SD1.5 full checkpoints use
@@ -123,7 +124,7 @@ The finite notebook removes an incompatible optional `torchao` package found in
 the tested Kaggle GPU image, then installs pinned PEFT 0.22.0 and bitsandbytes 0.50.2.
 This affects only the disposable remote environment, not local desktop packages.
 The runner's NF4 option uses bitsandbytes. Wan VAE decoding loads in FP32 while
-its denoiser can use FP16; non-finite video pixels are rejected before export.
+its denoiser uses the selected precision; non-finite video pixels are rejected before export.
 See the [publisher's Wan pipeline recipe](https://huggingface.co/docs/diffusers/en/api/pipelines/wan).
 
 Status, logs and output requests target the recorded notebook version. Downloads
@@ -135,7 +136,12 @@ Selecting an incompatible model clears the previous model's adapter.
 - Default tool/runtime/cache location is `~/.local/share/canvas-studio/`, outside
   the repository. Set an absolute cache folder in Connections to use an external
   drive. Model weights, credentials, generated jobs and venvs are not Git assets.
-- Download budgets and a 3 GB cache reserve are checked before weights load.
+- Submission checks pinned model file sizes against the download budget before
+  reserving a GPU notebook. Wan 2.1 1.3B downloads about 26.94 GiB of original
+  weights; its default download allowance is 32 GiB. Precision conversion does
+  not reduce the original weight download. A 3 GiB cache reserve is checked
+  again inside the runtime. Remote weights use ephemeral `/kaggle/temp` storage,
+  outside persisted notebook outputs, and are cleaned up after execution.
   Safetensors variants are selected without duplicate full checkpoints. Partial
   Civitai downloads are process-specific and checksum verified.
 - Inference receipts include pinned model, settings, seed, versions, device,
