@@ -1,11 +1,11 @@
 """Provider-independent tests for private finite inference jobs, input validation and weight selection."""
-import ast,hashlib,json,os,sys,tempfile,unittest,zipfile,urllib.request,urllib.error
+import ast,hashlib,json,os,sys,tempfile,unittest,zipfile,urllib.request,urllib.error,subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch,MagicMock
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'generation'))
 import studio_ai as ai
-from studio_inference import validate,select_files
+from studio_inference import validate,select_files,component_overrides
 class GenerationTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.folder=Path(self.temp.name);self.env=patch.dict(os.environ,{'XDG_DATA_HOME':str(self.folder/'data')});self.env.start()
@@ -27,7 +27,10 @@ class GenerationTests(unittest.TestCase):
   job=self.job();request={**self.request,'prompt':"An adult designer says: '); __import__('os').system('false'); #",'device':'cpu','precision':'fp32'}
   result=ai.prepare(request,job)
   self.assertTrue(result['private']);meta=json.loads((job/'inference/kernel-metadata.json').read_text());self.assertIs(meta['is_private'],True);self.assertTrue(meta['enable_gpu'])
+  self.assertEqual(meta['title'],meta['id'].split('/')[1])
   notebook=json.loads((job/'inference/inference.ipynb').read_text());joined='\n'.join(''.join(c['source']) for c in notebook['cells'])
+  self.assertEqual(len({cell['id'] for cell in notebook['cells']}),3)
+  setup=''.join(notebook['cells'][1]['source']);self.assertIn("'uninstall','--yes','torchao'",setup);self.assertIn('peft==0.22.0',setup)
   for secret in ('secret-kaggle-test-value','secret-hf-test-value','secret-civi-test-value'):self.assertNotIn(secret,joined)
   for c in notebook['cells']:
    if c['cell_type']=='code':ast.parse(''.join(c['source']))
@@ -40,20 +43,51 @@ class GenerationTests(unittest.TestCase):
  def test_submit_requires_connection_and_bounded_private_gpu(self):
   with self.assertRaises(ValueError):ai.submit(self.request,self.job())
   ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'})
-  with patch.object(ai,'cli',return_value='Kernel successfully pushed') as cli:
+  with patch.object(ai,'cli',return_value='Kernel version 1 successfully pushed. Please check progress at https://www.kaggle.com/code/studio-test/canonical-notebook') as cli:
    result=ai.submit(self.request,self.job());args=cli.call_args.args[0];self.assertIn('NvidiaTeslaT4',args);self.assertIn('--timeout',args);self.assertTrue(result['submitted']);self.assertTrue(result['private'])
    with self.assertRaises(ValueError):ai.run_record(result['run_id'],'another-document')
    self.assertEqual(ai.run_record(result['run_id'],'test-document')['kernel'],result['kernel'])
+   self.assertEqual(result['kernel'],'studio-test/canonical-notebook');self.assertEqual(ai.versioned_kernel(ai.run_record(result['run_id'],'test-document')),'studio-test/canonical-notebook/1')
+   meta=json.loads((self.job()/'inference/kernel-metadata.json').read_text());self.assertEqual(meta['id'],result['kernel']);self.assertEqual(meta['title'],'canonical-notebook')
   with self.assertRaises(ValueError):ai.prepare({**self.request,'timeout':999999},self.job('job-too-long'))
  def test_download_checks_receipt_and_document(self):
   ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'})
-  with patch.object(ai,'cli',return_value='pushed'):result=ai.submit(self.request,self.job())
+  with patch.object(ai,'cli',return_value='Kernel version 1 successfully pushed. Please check progress at https://www.kaggle.com/code/studio-test/canonical-notebook'):result=ai.submit(self.request,self.job())
   folder=self.job('job-download')
   def fake_cli(args,*a):
    if args[1]=='status':return 'Kernel has status complete'
    path=Path(args[args.index('-p')+1]);(path/'output.png').write_bytes(b'file');(path/'receipt.json').write_text(json.dumps({'output_sha256':'bad'}));return 'downloaded'
   with patch.object(ai,'cli',side_effect=fake_cli),self.assertRaises(ValueError):ai.remote_download({'run_id':result['run_id'],'document_id':'test-document'},folder)
   self.assertFalse((folder/'frame.png').exists())
+ def test_zero_exit_push_error_or_auth_help_is_not_a_successful_submission(self):
+  process=SimpleNamespace(returncode=0,stdout='Kernel push error: GPU unavailable',stderr='')
+  with patch.object(ai.subprocess,'run',return_value=process),self.assertRaisesRegex(ValueError,'GPU unavailable'):ai.cli(['kernels','push'])
+  ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'})
+  with patch.object(ai,'cli',return_value='Authentication required. Run kaggle auth login.'),self.assertRaisesRegex(ValueError,'did not confirm'):ai.submit(self.request,self.job())
+ def test_timed_out_submission_can_be_checked_without_creating_a_duplicate(self):
+  ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'})
+  with patch.object(ai,'cli',side_effect=subprocess.TimeoutExpired('kaggle',120)) as cli:
+   result=ai.submit(self.request,self.job());self.assertFalse(result['submitted']);self.assertEqual(cli.call_count,1)
+   self.assertEqual(ai.run_record(result['run_id'],'test-document')['submission'],'unconfirmed')
+ def test_remote_failure_log_is_readable_and_redacted_before_truncation(self):
+  ai.save_settings({'hf_token':'fake-split-secret'})
+  raw=json.dumps([{'data':'old line\n'*1000},{'data':'token: fake-split-'},{'data':'secret\nImportError: incompatible optional backend'}])
+  tail=ai.format_log_tail(raw);self.assertNotIn('fake-split-secret',tail);self.assertIn('[redacted]',tail);self.assertTrue(tail.endswith('ImportError: incompatible optional backend'));self.assertLessEqual(len(tail),4000)
+ def test_wan_decoder_loads_in_fp32_without_changing_image_pipelines(self):
+  loader=MagicMock();torch=SimpleNamespace(float32='FP32');diffusers=SimpleNamespace(AutoencoderKLWan=SimpleNamespace(from_pretrained=loader))
+  files=[SimpleNamespace(rfilename='vae/diffusion_pytorch_model.fp16.safetensors')]
+  kwargs=component_overrides({'pipeline':'WanPipeline'},'/snapshot',files,'fp16',torch,diffusers)
+  self.assertIn('vae',kwargs);self.assertEqual(loader.call_args.kwargs['torch_dtype'],'FP32');self.assertEqual(loader.call_args.kwargs['variant'],'fp16')
+  loader.reset_mock();self.assertEqual(component_overrides({'pipeline':'StableDiffusionXLPipeline'},'/snapshot',files,'fp16',torch,diffusers),{});loader.assert_not_called()
+ def test_valid_hash_from_another_model_is_not_imported(self):
+  ai.save_settings({'kaggle_username':'studio-test','kaggle_token':'test-token'})
+  with patch.object(ai,'cli',return_value='Kernel version 2 successfully pushed. Please check progress at https://www.kaggle.com/code/studio-test/canonical-notebook'):result=ai.submit(self.request,self.job())
+  folder=self.job('wrong-receipt')
+  def fake_cli(args,*a):
+   self.assertEqual(args[2],'studio-test/canonical-notebook/2')
+   if args[1]=='status':return 'KernelWorkerStatus.COMPLETE'
+   dest=Path(args[args.index('-p')+1]);(dest/'output.png').write_bytes(b'file');(dest/'receipt.json').write_text(json.dumps({'output_sha256':hashlib.sha256(b'file').hexdigest(),'model':{'id':'other/model','revision':'a'*40}}));return 'downloaded'
+  with patch.object(ai,'cli',side_effect=fake_cli),self.assertRaisesRegex(ValueError,'different model'):ai.remote_download({'run_id':result['run_id'],'document_id':'test-document'},folder)
  def test_weight_variant_selection_skips_pickle_and_python(self):
   files=[SimpleNamespace(rfilename=n,size=10) for n in ['model_index.json','unet/config.json','unet/diffusion_pytorch_model.safetensors','unet/diffusion_pytorch_model.fp16.safetensors','unet/diffusion_pytorch_model.bin','custom_pipeline.py','tokenizer/vocab.json','sdxl-full.safetensors']]
   names=[f.rfilename for f in select_files(files,'fp16')]

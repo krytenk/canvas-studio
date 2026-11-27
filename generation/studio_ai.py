@@ -5,7 +5,7 @@ import argparse,base64,hashlib,json,os,re,shutil,subprocess,sys,time,urllib.pars
 from pathlib import Path
 from studio_inference import validate,run as infer,REPO
 HERE=Path(__file__).resolve().parent
-VERSION='1.16.1';KAGGLE_VERSION='2.2.5'
+VERSION='1.16.2';KAGGLE_VERSION='2.2.5'
 def root():
  p=Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'canvas-studio/ai';p.mkdir(parents=True,exist_ok=True);p.chmod(0o700);return p
 def write(path,value):
@@ -37,15 +37,18 @@ def env():
  for key,name in [('kaggle_token','KAGGLE_API_TOKEN'),('hf_token','HF_TOKEN'),('civitai_token','CIVITAI_API_KEY')]:
   if s.get(key):result[name]=s[key]
  return result
-def redact(text):
+def redact(text,max_length=5000):
  for key in ('hf_token','kaggle_token','civitai_token'):
   secret=settings().get(key) or os.environ.get({'hf_token':'HF_TOKEN','kaggle_token':'KAGGLE_API_TOKEN','civitai_token':'CIVITAI_API_KEY'}[key])
   if secret:text=text.replace(secret,'[redacted]')
- return re.sub(r'(Bearer\s+)[^\s\"\']+',r'\1[redacted]',text)[:5000]
-def cli(args,timeout=90):
+ clean=re.sub(r'(Bearer\s+)[^\s\"\']+',r'\1[redacted]',text)
+ return clean if max_length is None else clean[:max_length]
+def cli(args,timeout=90,max_length=5000):
  p=subprocess.run([*kaggle(),*args],env=env(),stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=timeout)
  if p.returncode:raise ValueError(redact(p.stderr or p.stdout or 'Kaggle CLI failed'))
- return redact(p.stdout)
+ # The official push CLI can print an API error while exiting with status zero.
+ if args[:2]==['kernels','push'] and re.search(r'(?im)^Kernel push error:',p.stdout):raise ValueError(redact(p.stdout))
+ return redact(p.stdout,max_length)
 def catalog():
  data=json.loads((HERE/'catalog.json').read_text());custom=root()/'custom-models.json'
  if custom.exists():data['models'].extend(json.loads(custom.read_text()))
@@ -141,7 +144,10 @@ def prepare(v,folder):
  if s.get('reference'):
   p=Path(s['reference']);reference=base64.b64encode(p.read_bytes()).decode();portable['reference']='/kaggle/working/reference.png'
  code=(HERE/'studio_inference.py').read_text();runtime_sha=hashlib.sha256(code.encode()).hexdigest()
- setup="import sys,subprocess\nsubprocess.check_call([sys.executable,'-m','pip','install','--quiet','diffusers==0.43.0','transformers==5.24.1','accelerate==1.16.0','safetensors','sentencepiece','protobuf','imageio[ffmpeg]','peft','bitsandbytes'])"
+ # Kaggle's GPU image currently carries torchao 0.10. PEFT 0.22 rejects that
+ # optional backend even for ordinary LoRA. This runner uses bitsandbytes NF4,
+ # not torchao; remove it only in this disposable remote notebook environment.
+ setup="import sys,subprocess\nsubprocess.check_call([sys.executable,'-m','pip','uninstall','--yes','torchao'])\nsubprocess.check_call([sys.executable,'-m','pip','install','--quiet','diffusers==0.43.0','transformers==5.24.1','accelerate==1.16.0','safetensors','sentencepiece','protobuf','imageio[ffmpeg]','peft==0.22.0','bitsandbytes==0.50.2'])\nimport torch,platform\nprint('Python',platform.python_version(),'Torch',torch.__version__,'CUDA available',torch.cuda.is_available())\nif torch.cuda.is_available():print('GPU',torch.cuda.get_device_name(0))"
  program="import base64,json,os\nfrom pathlib import Path\nPath('/kaggle/working/studio_inference.py').write_bytes(base64.b64decode("+repr(base64.b64encode(code.encode()).decode())+"))\n"
  if reference:program+="Path('/kaggle/working/reference.png').write_bytes(base64.b64decode("+repr(reference)+"))\n"
  program+="try:\n from kaggle_secrets import UserSecretsClient\n os.environ['HF_TOKEN']=UserSecretsClient().get_secret('HF_TOKEN')\nexcept Exception:\n pass\n"
@@ -150,8 +156,10 @@ def prepare(v,folder):
  # Do not retain huge model caches as notebook outputs.
  program+="import shutil\nshutil.rmtree('/kaggle/working/model-cache',ignore_errors=True)\n"
  cells=[{'cell_type':'markdown','metadata':{},'source':['# Canvas Studio private inference\nFinite GPU job. Model weights/licence, quota and access requirements still apply. No credentials are embedded.']},{'cell_type':'code','metadata':{},'execution_count':None,'outputs':[],'source':setup.splitlines(True)},{'cell_type':'code','metadata':{},'execution_count':None,'outputs':[],'source':program.splitlines(True)}]
+ for i,cell in enumerate(cells):cell['id']='studio-'+str(i)
  write(dest/'inference.ipynb',{'nbformat':4,'nbformat_minor':5,'metadata':{'kernelspec':{'name':'python3','display_name':'Python 3','language':'python'}},'cells':cells})
- write(dest/'kernel-metadata.json',{'id':handle,'title':'Canvas Studio '+s['model']['name'][:45],'code_file':'inference.ipynb','language':'python','kernel_type':'notebook','is_private':True,'enable_gpu':True,'enable_internet':True,'dataset_sources':[],'competition_sources':[],'kernel_sources':[],'model_sources':[]})
+ # For a new notebook Kaggle derives its canonical slug from the title.
+ write(dest/'kernel-metadata.json',{'id':handle,'title':slug,'code_file':'inference.ipynb','language':'python','kernel_type':'notebook','is_private':True,'enable_gpu':True,'enable_internet':True,'dataset_sources':[],'competition_sources':[],'kernel_sources':[],'model_sources':[]})
  manifest={'schema':1,'studio_version':VERSION,'kernel':handle,'timeout':timeout,'accelerator':'NvidiaTeslaT4','spec':portable,'runtime_sha256':runtime_sha,'requires_connection':not connection_state()['kaggle_configured'],'private':True,'upload_note':'Submitting uploads this prompt and any chosen reference to your private Kaggle notebook. Quota is controlled by Kaggle.'}
  write(dest/'manifest.json',manifest)
  with zipfile.ZipFile(folder/'motion-source.zip','w',zipfile.ZIP_DEFLATED) as z:
@@ -161,25 +169,54 @@ def submit(v,folder):
  state=connection_state()
  if not state['kaggle_configured'] or not state['kaggle_username']:raise ValueError('Connect your Kaggle username and API token in Connections before submitting')
  result=prepare(v,folder);folder=Path(folder);meta=json.loads((folder/'inference/kernel-metadata.json').read_text());assert meta['is_private'] is True
- response=cli(['kernels','push','-p',str(folder/'inference'),'--timeout',str(v.get('timeout',1800)),'--accelerator','NvidiaTeslaT4'],120)
- handle=result['kernel'];run_id=hashlib.sha256(handle.encode()).hexdigest()[:24]
- write(root()/'runs'/('run-'+run_id+'.json'),{'kernel':handle,'model':spec(v)['model'],'request':v,'created_at':time.time(),'document_id':v.get('document_id'),'timeout':v.get('timeout',1800)})
- return {**result,'submitted':True,'kernel':handle,'run_id':'run-'+run_id,'url':'https://www.kaggle.com/code/'+handle,'response':response,'note':'Finite private notebook submitted. Poll status, then download its output. A local Cancel button does not stop an already submitted remote notebook; use Kaggle controls.'}
+ requested=result['kernel'];run_id='run-'+hashlib.sha256(requested.encode()).hexdigest()[:24]
+ record={'kernel':requested,'requested_kernel':requested,'model':spec(v)['model'],'request':v,'created_at':time.time(),'document_id':v.get('document_id'),'timeout':v.get('timeout',1800)}
+ try:response=cli(['kernels','push','-p',str(folder/'inference'),'--timeout',str(v.get('timeout',1800)),'--accelerator','NvidiaTeslaT4'],120)
+ except subprocess.TimeoutExpired:
+  record['submission']='unconfirmed';write(root()/'runs'/(run_id+'.json'),record)
+  return {**result,'submitted':False,'run_id':run_id,'url':'https://www.kaggle.com/code/'+requested,'note':'Kaggle did not confirm the submission before the request timed out. Check this GPU run before retrying; it may already be running.'}
+ success=re.search(r'Kernel version(?:\s+(\d+))?\s+successfully pushed',response,re.I)
+ links=re.findall(r'https://www\.kaggle\.com/code/([A-Za-z0-9_-]+/[A-Za-z0-9_-]+)',response)
+ if not success or not links:raise ValueError('Kaggle did not confirm a running notebook submission. Check your account before retrying: '+redact(response))
+ handle=links[-1]
+ if handle.split('/')[0].lower()!=state['kaggle_username'].lower():raise ValueError('Kaggle returned a notebook owned by a different account; check your username and token')
+ record.update(kernel=handle,version=int(success[1]) if success[1] else None,submission='confirmed');write(root()/'runs'/(run_id+'.json'),record)
+ if handle!=requested:
+  manifest=json.loads((folder/'inference/manifest.json').read_text());manifest['requested_kernel']=requested;manifest['kernel']=handle;write(folder/'inference/manifest.json',manifest)
+  meta['id']=handle;meta['title']=handle.split('/')[1];write(folder/'inference/kernel-metadata.json',meta)
+  with zipfile.ZipFile(folder/'motion-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+   for path in sorted((folder/'inference').iterdir()):z.write(path,path.name)
+  result['package_bytes']=(folder/'motion-source.zip').stat().st_size
+ return {**result,'submitted':True,'kernel':handle,'run_id':run_id,'version':record['version'],'url':'https://www.kaggle.com/code/'+handle,'response':response,'note':'Finite private notebook submitted. Poll status, then download its output. A local Cancel button does not stop an already submitted remote notebook; use Kaggle controls.'}
 def run_record(id,document):
  if not re.fullmatch('run-[a-f0-9]{24}',id):raise ValueError('Invalid inference identity')
  p=root()/'runs'/(id+'.json');data=json.loads(p.read_text())
  if data.get('document_id')!=document:raise ValueError('This inference belongs to another document')
  return data
+def versioned_kernel(record):
+ version=record.get('version')
+ return record['kernel']+('/'+str(version) if type(version) is int and version>0 else '')
 def remote_status(v):
- record=run_record(v['run_id'],v.get('document_id'));response=cli(['kernels','status',record['kernel']]);lower=response.lower();state='complete' if 'complete' in lower else 'error' if any(w in lower for w in ['error','failed','cancelled']) else 'running' if 'running' in lower else 'queued'
- return {'run_id':v['run_id'],'kernel':record['kernel'],'remote_state':state,'response':response,'url':'https://www.kaggle.com/code/'+record['kernel']}
+ record=run_record(v['run_id'],v.get('document_id'));response=cli(['kernels','status',versioned_kernel(record)]);lower=response.lower();state='complete' if 'complete' in lower else 'error' if any(w in lower for w in ['error','failed','cancel']) else 'running' if 'running' in lower else 'queued'
+ result={'run_id':v['run_id'],'kernel':record['kernel'],'model':record['model']['id'],'remote_state':state,'response':response,'url':'https://www.kaggle.com/code/'+record['kernel']}
+ if state=='error':
+  try:result['log_tail']=format_log_tail(cli(['kernels','logs',versioned_kernel(record)],30,None))
+  except Exception as error:result['log_tail']='Execution log unavailable: '+redact(str(error))
+ return result
+def format_log_tail(raw):
+ try:
+  entries=json.loads(raw)
+  text=''.join(str(e.get('data','')) for e in entries) if isinstance(entries,list) else raw
+ except (ValueError,TypeError):text=raw
+ return redact(text,None)[-4000:]
 def remote_download(v,folder):
  record=run_record(v['run_id'],v.get('document_id'));state=remote_status(v)
  if state['remote_state']!='complete':raise ValueError('Kaggle inference is not complete yet')
  folder=Path(folder);dest=folder/'download';dest.mkdir(exist_ok=True)
- cli(['kernels','output',record['kernel'],'-p',str(dest),'--file-pattern',r'^(output\.(png|mp4)|receipt\.json)$'],180)
+ cli(['kernels','output',versioned_kernel(record),'-p',str(dest),'--file-pattern',r'^(output\.(png|mp4)|receipt\.json)$'],180)
  task=record['model']['task'];source=dest/('output.png' if task=='image' else 'output.mp4');receipt=json.loads((dest/'receipt.json').read_text())
  if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest()!=receipt['output_sha256']:raise ValueError('Downloaded output is missing or does not match its receipt')
+ if receipt.get('model',{}).get('id')!=record['model']['id'] or receipt.get('model',{}).get('revision')!=record['model']['revision']:raise ValueError('Downloaded receipt belongs to a different model/revision; nothing was imported')
  shutil.copyfile(source,folder/('frame.png' if task=='image' else 'movie.mp4'));write(folder/'receipt.json',receipt)
  return {'task':task,'model':record['model']['id'],'kernel':record['kernel'],'run_id':v['run_id'],'receipt':receipt,'downloaded':True}
 def execute(v,folder,progress=lambda value:None):

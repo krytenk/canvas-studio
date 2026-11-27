@@ -82,8 +82,11 @@ def run(binary,chrome=None,local=False):
      page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
      page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').first.click(timeout=20000)
     dl.value.save_as(work/'browser-inference.zip');assert zipfile.is_zipfile(work/'browser-inference.zip')
+    page.locator('#ai-form details summary').click()
+    page.locator('#ai-form [name=adapter]').select_option('sdxl-lightning-4')
     page.locator('#ai-video-tab').click();page.wait_for_function("() => aiSelected().task==='video'")
     assert not page.locator('#ai-video-options').is_hidden()
+    assert page.locator('#ai-form [name=adapter]').input_value()=='', 'Image-only adapter leaked into the video request'
     page.screenshot(path=qa/'generation-video.png',full_page=True)
     page.locator('#ai-edit').click();page.wait_for_selector('#film-studio:visible')
     page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('#generation-studio:visible')

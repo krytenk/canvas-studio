@@ -1,4 +1,4 @@
-# Generation studio — 1.16.1
+# Generation studio — 1.16.2
 
 Canvas Studio has separate **Design**, **Generate** and **Video studio** workspaces.
 Generate works in desktop, browser and MCP. It searches model metadata, prepares
@@ -109,6 +109,26 @@ checkpoints with a publisher SHA-256. Paid/early-access-only weights and pickle
 checkpoints are rejected. Civitai LoRAs are discoverable but need a compatible
 adapter recipe; arbitrary custom Python is not executed. Newly registered
 licences remain marked for review rather than automatically approved for ads.
+
+## Kaggle runtime and remote status
+
+Version 1.16.2 matches notebook titles to unique slugs and records the canonical
+URL and version returned by Kaggle. A local submission task completing is shown
+as **GPU / submitted**, not a claim that the image or video has finished. Use
+**Check GPU run** to see queued/running/complete/error states. Failures include a
+readable, redacted execution-log tail. A request timeout is reported as unconfirmed;
+check that run before retrying, since the remote notebook may already exist.
+
+The finite notebook removes an incompatible optional `torchao` package found in
+the tested Kaggle GPU image, then installs pinned PEFT 0.22.0 and bitsandbytes 0.50.2.
+This affects only the disposable remote environment, not local desktop packages.
+The runner's NF4 option uses bitsandbytes. Wan VAE decoding loads in FP32 while
+its denoiser can use FP16; non-finite video pixels are rejected before export.
+See the [publisher's Wan pipeline recipe](https://huggingface.co/docs/diffusers/en/api/pipelines/wan).
+
+Status, logs and output requests target the recorded notebook version. Downloads
+must match the recorded model/revision and their receipt checksum before import.
+Selecting an incompatible model clears the previous model's adapter.
 
 ## Storage, reproducibility and limits
 

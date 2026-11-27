@@ -1,5 +1,20 @@
 # Changes
 
+## 1.16.2 — Kaggle inference runtime and result integrity
+
+- Match unique private notebook titles to requested slugs, accept only confirmed
+  SDK submissions, and record the actual canonical URL/version returned by Kaggle.
+  Status, logs and output stay pinned to that version; timed-out uploads can be
+  checked without an automatic duplicate GPU submission.
+- Remove an incompatible optional torchao package in the disposable Kaggle
+  environment and pin PEFT/bitsandbytes. Local desktop packages are unaffected.
+- Load Wan video decoders in FP32 independently of the denoiser, reject non-finite
+  video pixels, and record decoder/package versions in inference receipts.
+- Check downloaded model/revision as well as output checksum. Show model names,
+  remote GPU states and readable redacted failure logs in the studio.
+- Clear incompatible image-only adapters when selecting a video model.
+
+
 ## 1.16.1 — Browser connection and model search repair
 
 - A browser opened with the bare local address now asks for its private session

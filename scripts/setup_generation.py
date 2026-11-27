@@ -8,6 +8,6 @@ python=base/'bin/python'
 subprocess.run([str(python),'-m','pip','install','--disable-pip-version-check','kaggle==2.2.5','six==1.17.0'],check=True)
 if a.local_inference:
  subprocess.run([str(python),'-m','pip','install','--index-url','https://download.pytorch.org/whl/cpu','torch==2.9.1+cpu'],check=True)
- subprocess.run([str(python),'-m','pip','install','diffusers==0.43.0','transformers==5.24.1','accelerate==1.16.0','safetensors','sentencepiece','protobuf','imageio[ffmpeg]','peft','bitsandbytes'],check=True)
+ subprocess.run([str(python),'-m','pip','install','diffusers==0.43.0','transformers==5.24.1','accelerate==1.16.0','safetensors','sentencepiece','protobuf','imageio[ffmpeg]','peft==0.22.0','bitsandbytes==0.50.2'],check=True)
 print('Generation tools:',base)
 print('No model weights downloaded. Add your Kaggle username/API token in the studio Connections screen; keep tokens out of chat.')

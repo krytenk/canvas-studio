@@ -91,6 +91,13 @@ def download_civitai(model,cache,limit,progress):
   temporary.replace(dest);return dest
  finally:temporary.unlink(missing_ok=True)
 
+def component_overrides(model,snapshot,selected,precision,torch,diffusers):
+ """Wan's decoder needs FP32 even when the denoiser uses FP16 on a T4."""
+ if model['pipeline'] not in ('WanPipeline','WanImageToVideoPipeline'):return {}
+ options=dict(subfolder='vae',torch_dtype=torch.float32,local_files_only=True,use_safetensors=True)
+ if any(f.rfilename.startswith('vae/') and '.'+precision+'.safetensors' in f.rfilename for f in selected):options['variant']=precision
+ return {'vae':diffusers.AutoencoderKLWan.from_pretrained(snapshot,**options)}
+
 def run(s,output_dir,cache_dir,progress=lambda v:None):
  validate(s);import torch
  from huggingface_hub import HfApi,snapshot_download
@@ -120,6 +127,7 @@ def run(s,output_dir,cache_dir,progress=lambda v:None):
    if not cuda:raise ValueError('This NF4 recipe requires CUDA')
    from diffusers.quantizers import PipelineQuantizationConfig
    kwargs['quantization_config']=PipelineQuantizationConfig(quant_backend='bitsandbytes_4bit',quant_kwargs={'load_in_4bit':True,'bnb_4bit_quant_type':'nf4','bnb_4bit_compute_dtype':dtype},components_to_quantize=['transformer'])
+  kwargs.update(component_overrides(model,snapshot,selected,s['precision'],torch,diffusers))
   pipe=cls.from_pretrained(snapshot,**kwargs)
  for adapter in s.get('adapters',[]):
   pipe.load_lora_weights(adapter['repository'],revision=adapter['revision'],weight_name=adapter['weight_name'],use_safetensors=True)
@@ -141,6 +149,9 @@ def run(s,output_dir,cache_dir,progress=lambda v:None):
  progress('Generating '+model['task']);began=time.monotonic();result=pipe(**options)
  content_check='not added; model defaults preserved'
  samples=[result.images[0]] if model['task']=='image' else list(result.frames[0])
+ if model['task']=='video':
+  import numpy as np
+  if not all(np.isfinite(np.asarray(frame)).all() for frame in samples):raise ValueError('The video decoder produced non-finite pixels. Try a reviewed precision setting; no video was imported')
  if s['content_mode']=='standard':
   from transformers import pipeline
   progress('Running the selected output check')
@@ -158,5 +169,10 @@ def run(s,output_dir,cache_dir,progress=lambda v:None):
  else:
   from diffusers.utils import export_to_video
   target=output/'output.mp4';export_to_video(samples,str(target),fps=s['fps'])
- receipt={'schema':1,'model':model,'settings':{k:v for k,v in s.items() if k not in ('model','reference')},'reference_used':bool(s.get('reference')),'elapsed_seconds':round(time.monotonic()-began,2),'device':torch.cuda.get_device_name(0) if cuda else 'CPU','content_check':content_check,'diffusers_version':diffusers.__version__,'torch_version':torch.__version__,'output_sha256':hashlib.sha256(target.read_bytes()).hexdigest()}
+ import importlib.metadata
+ versions={}
+ for name in ('diffusers','transformers','peft','accelerate','bitsandbytes'):
+  try:versions[name]=importlib.metadata.version(name)
+  except importlib.metadata.PackageNotFoundError:pass
+ receipt={'schema':1,'model':model,'settings':{k:v for k,v in s.items() if k not in ('model','reference')},'reference_used':bool(s.get('reference')),'elapsed_seconds':round(time.monotonic()-began,2),'device':torch.cuda.get_device_name(0) if cuda else 'CPU','vae_precision':str(pipe.vae.dtype) if hasattr(pipe,'vae') else None,'packages':versions,'content_check':content_check,'diffusers_version':diffusers.__version__,'torch_version':torch.__version__,'output_sha256':hashlib.sha256(target.read_bytes()).hexdigest()}
  (output/'receipt.json').write_text(json.dumps(receipt,indent=2));return target,receipt
