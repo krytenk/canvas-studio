@@ -10,7 +10,9 @@ Designing, templates and video editing remain usable without model services.
 
 1. Install the small provider tools: `python3 scripts/setup_generation.py`.
 2. Open **Generate → Connections & storage**. Enter your Kaggle username and API
-   token there, never in a prompt or chat. Tokens are held in a private local file
+   token there, never in a prompt or chat. Google sign-in works normally: create
+   the separate token at [Kaggle API settings](https://www.kaggle.com/settings/api).
+   Use your profile handle as the username, not your Google email or password. Tokens are held in a private local file
    outside projects and Git. Optional Hugging Face/Civitai credentials support
    authenticated local downloads and metadata access.
 3. Start with RealVisXL/SDXL for portraits or Wan 2.1 1.3B for modest video tests.
@@ -105,6 +107,9 @@ licences remain marked for review rather than automatically approved for ads.
   8/16/24 fps; inference steps to 1–60. Image import is limited to 64 MB/16 MP.
 - Generated MP4 imports are rendered footage, not editable neural-model internals.
   LTX's native audio capabilities are not exposed by this first video-frame runner.
+- Design/video render history and generation history have separate clear controls.
+  Save outputs first; clearing review tasks preserves imported project assets, model
+  caches and submitted remote notebooks.
 - Provider calls are asynchronous and local request workers can be cancelled.
   No service credentials are returned by the application or MCP.
 

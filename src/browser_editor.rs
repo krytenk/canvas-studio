@@ -1094,6 +1094,10 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
             let count = crate::media_service::clear_finished(&s.project.document_id)?;
             return Ok(Response::value(json!({"cleared":count}), s.revision));
         }
+        "/api/ai/clear-jobs" => {
+            let count = crate::media_service::clear_finished_kind(&s.project.document_id, true)?;
+            return Ok(Response::value(json!({"cleared":count}), s.revision));
+        }
         "/api/film/render" | "/api/film/proxy" | "/api/film/cancel" => {
             let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
             if base == "/api/film/cancel" {

@@ -2,7 +2,7 @@
 No GPU submission or production weight downloads. --local-proof runs a tiny random
 CPU pipeline as an integration fixture, not an example of model image quality.
 """
-import argparse,base64,json,os,select,subprocess,sys,time,zipfile
+import argparse,base64,json,os,select,subprocess,sys,time,zipfile,urllib.request
 from pathlib import Path
 from mcp_smoke import Client,META
 from media_smoke import launch,wait
@@ -96,6 +96,20 @@ def run(binary,chrome=None,local=False):
     assert not errors,errors
     context.close();browser.close()
    report['browser']='Image/video selectors; source ZIP download; Video studio handoff; unsaved connection draft; narrow layout; no JS errors'
+  # Clearing video history must never silently erase the separate generation work.
+  edit([{'action':'film_setup','width':320,'height':192,'fps':24,'duration':24}])
+  frame=c.call('studio_media_render',{**c.guard(),'mode':'frame','frame':0});wait(c,frame)
+  def clear(path):
+   credentials=json.loads(connection.read_text());g=c.guard()
+   req=urllib.request.Request('http://127.0.0.1:'+str(credentials['port'])+path,data=b'{}',headers={'Content-Type':'application/json','X-Canvas-Token':credentials['token'],'X-Canvas-Revision':str(g['expected_revision']),'X-Canvas-Document':g['document_id']})
+   return json.load(urllib.request.urlopen(req))
+  assert clear('/api/film/clear-jobs')['cleared']>=1
+  c.call('studio_media_job',{**c.guard(),'id':j['id'],'operation':'status'})
+  c.call('studio_media_job',{**c.guard(),'id':frame['id'],'operation':'status'},error=True)
+  assets=c.call('studio_document')['elements'];assert clear('/api/ai/clear-jobs')['cleared']>=1
+  assert c.call('studio_document')['elements']==assets
+  c.call('studio_media_job',{**c.guard(),'id':j['id'],'operation':'status'},error=True)
+  report['history']='Video/generation cleanup is scoped; imported design assets preserved'
   report['production_gpu']='Not tested: requires user Kaggle authentication and account GPU quota. No remote job submitted.'
   (qa/'report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
  finally:c.close();server.terminate();server.wait(timeout=10);log.close()

@@ -155,7 +155,7 @@ pub(crate) fn begin(
     task: impl FnOnce(&Path) -> Result<Value, String> + Send + 'static,
 ) -> Result<String, String> {
     if storage_bytes(&crate::media_store::root().join("jobs")) > 1024 * 1024 * 1024 {
-        return Err("Render history exceeds 1 GiB. Save any movies you need, then clear finished jobs in Film studio".into());
+        return Err("Render history exceeds 1 GiB. Save any movies you need, then clear finished tasks in Video or Generate studio".into());
     }
     if ACTIVE.fetch_add(1, Ordering::SeqCst) >= 2 {
         ACTIVE.fetch_sub(1, Ordering::SeqCst);
@@ -525,12 +525,16 @@ pub fn storage() -> Value {
     json!({"originals_bytes":storage_bytes(&crate::media_store::root().join("originals")),"cache_bytes":storage_bytes(&crate::media_store::root().join("cache")),"jobs_bytes":storage_bytes(&crate::media_store::root().join("jobs")),"jobs_soft_limit_bytes":1024u64*1024*1024})
 }
 pub fn clear_finished(doc: &str) -> Result<usize, String> {
+    clear_finished_kind(doc, false)
+}
+pub fn clear_finished_kind(doc: &str, generation: bool) -> Result<usize, String> {
     let mut count = 0;
     for e in fs::read_dir(crate::media_store::folder("jobs")?).map_err(|e| e.to_string())? {
         let e = e.map_err(|e| e.to_string())?;
         if let Some(id) = e.file_name().to_str() {
             if let Ok(s) = status(id, doc) {
-                if s["state"] != "running" {
+                let is_generation = s["mode"].as_str().is_some_and(|m| m.starts_with("ai_"));
+                if s["state"] != "running" && is_generation == generation {
                     fs::remove_dir_all(e.path()).map_err(|e| e.to_string())?;
                     count += 1;
                 }
