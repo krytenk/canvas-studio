@@ -4,7 +4,7 @@ Only generated QA fixtures are used; no personal Reference Desk files are read.
 import argparse,gzip,hashlib,json,os,re,subprocess,time,urllib.request,urllib.error
 from pathlib import Path
 from PIL import Image
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect,sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 TXT='A useful tutorial\nhttps://example.com/owned-video\nOn-device speech recognition (en)\n\n[0:01] First useful passage.\n[1:02] A second passage with café and <script> as plain text.\n'
 SRT='1\n00:00:01,000 --> 00:00:02,500\nFirst caption\n\n2\n00:01:01,000 --> 00:01:02,000\nSecond caption\n'
@@ -18,6 +18,7 @@ def run(binary,chrome):
     subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=0.3',str(library/'Audio/owned-tone.wav')],check=True)
     subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=128x96:rate=30','-t','0.4','-c:v','libx264','-pix_fmt','yuv420p',str(library/'Video/owned-shot.mp4')],check=True)
     originals={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in library.rglob('*') if p.is_file()}
+    with (library/'Video/oversized-working-copy.mp4').open('wb') as sparse:sparse.truncate(128*1024*1024+1)
     env={**os.environ,'XDG_DATA_HOME':str(folder/'data'),'CANVAS_STUDIO_REFERENCE_ROOT':str(library),'CANVAS_STUDIO_PROFILE':'publishing'}
     log=(folder/'server.log').open('w');process=subprocess.Popen([str(binary),'--serve-browser','--port','0'],cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT)
     try:
@@ -44,6 +45,7 @@ def run(binary,chrome):
             page.get_by_role('button',name='Bring in research',exact=True).click()
             page.locator('#research-files .research-file').last.wait_for()
             assert not page.get_by_role('button',name='Image and video generation',exact=True).is_visible()
+            large=page.locator('#research-files .research-file').filter(has=page.get_by_text('oversized-working-copy.mp4',exact=True));assert large.get_by_role('button',name='Import to video library',exact=True).is_disabled();assert 'working copy' in large.inner_text()
             def preview(name):
                 page.locator('#research-files .research-file').filter(has=page.get_by_text(name,exact=True)).get_by_role('button',name='Preview transcript',exact=True).click()
                 page.get_by_role('button',name='Copy source into project',exact=True).wait_for()
@@ -52,7 +54,7 @@ def run(binary,chrome):
             page.get_by_role('button',name='01:02  A second passage with café and <script> as plain text.',exact=True).click()
             page.get_by_role('button',name='Add passage to page notes',exact=True).click()
             page.wait_for_function("() => state.notes.includes('00:01:02,000')")
-            assert 'https://example.com/owned-video' in page.locator('#research-notes').inner_text()
+            expect(page.locator('#research-notes')).to_contain_text('https://example.com/owned-video')
             page.get_by_role('button',name='Undo',exact=True).click();page.wait_for_function("() => state.notes===''")
             page.get_by_role('button',name='Redo',exact=True).click();page.wait_for_function("() => state.notes.includes('second passage')")
             page.screenshot(path=qa/'research-desktop.png',full_page=True)
@@ -102,7 +104,7 @@ def run(binary,chrome):
             assert not errors,errors;assert not external,external
             context.close();browser.close()
         for name,digest in originals.items():assert hashlib.sha256(Path(name).read_bytes()).hexdigest()==digest,name
-        report={'generation_disabled':'passed','no_external_requests':'passed','source_snapshot_and_changed_preview_guard':'passed','source_citations_and_undo_redo':'passed','captions_and_atomic_overlap_rejection':'passed','audio_and_video_import':'passed','real_caption_frame':'passed','portable_v6_cold_native_load':'passed','document_isolation':'passed','original_files_unchanged':'passed','700px_no_overflow':'passed','page_errors':errors}
+        report={'oversized_media_guidance':'passed','generation_disabled':'passed','no_external_requests':'passed','source_snapshot_and_changed_preview_guard':'passed','source_citations_and_undo_redo':'passed','captions_and_atomic_overlap_rejection':'passed','audio_and_video_import':'passed','real_caption_frame':'passed','portable_v6_cold_native_load':'passed','document_isolation':'passed','original_files_unchanged':'passed','700px_no_overflow':'passed','page_errors':errors}
         (qa/'report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
     finally:process.terminate();process.wait(timeout=10);log.close()
 if __name__=='__main__':

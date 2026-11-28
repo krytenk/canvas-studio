@@ -1,5 +1,5 @@
 """Open the Research workspace in a real, isolated native window."""
-import argparse,os,shutil,subprocess,sys,time
+import argparse,gzip,json,os,shutil,subprocess,sys,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def run(binary):
@@ -24,6 +24,7 @@ sys.path.insert(0,sys.argv[1]);import native_ui as ui
 ui.X.XMoveResizeWindow(ui.d,ui.w,0,0,1280,900);ui.X.XFlush(ui.d);time.sleep(.8)
 ui=importlib.reload(ui);ui.focus();ui.click(350,20);ui.screenshot(sys.argv[2]+'/research.png')
 ui.click(185,406);ui.screenshot(sys.argv[2]+'/reader.png')
+ui.click(730,330);ui.chord('Control_L','s');time.sleep(.5);ui.screenshot(sys.argv[2]+'/notes-added.png')
 ui.X.XMoveResizeWindow(ui.d,ui.w,0,0,1024,680);ui.X.XFlush(ui.d);time.sleep(.5)
 ui=importlib.reload(ui);ui.screenshot(sys.argv[2]+'/minimum.png')
 ui.click(148,20);ui.screenshot(sys.argv[2]+'/home-publishing.png')
@@ -32,7 +33,8 @@ ui.click(148,20);ui.screenshot(sys.argv[2]+'/home-publishing.png')
         assert app.poll() is None,(qa/'native.log').read_text()
         assert 'panicked at' not in (qa/'native.log').read_text().lower()
         subprocess.run([str(binary),'--verify-project',str(working)],env=env,check=True,capture_output=True)
-        (qa/'result.txt').write_text('PASS: real native Research and publishing Home, 1280x900 and 1024x680 proofs, portable research/media project loads; visual review required.\n')
+        bundle=json.loads(gzip.decompress(working.read_bytes().split(b'\n',2)[2]));project=json.loads(bundle['project']);assert 'First useful passage.' in project['pages'][0]['notes']
+        (qa/'result.txt').write_text('PASS: real native Research and publishing Home, 1280x900 and 1024x680 proofs, selected passage added through native UI, saved and verified in portable project; visual review required.\n')
     finally:
         if app:app.terminate();app.wait(timeout=10)
         server.terminate();server.wait(timeout=10);log.close()

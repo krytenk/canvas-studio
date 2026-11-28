@@ -176,8 +176,9 @@ impl CanvasStudioApp {
                         ui.push_id(&entry.id,|ui|{
                             ui.label(&entry.name);ui.small(format!("{} · {:.1} KB",entry.kind,entry.bytes as f64/1024.));
                             if matches!(entry.kind.as_str(),"txt"|"srt") {
-                                if ui.button("Preview transcript").clicked(){match crate::reference_desk::preview_at(&crate::reference_desk::root(),&entry.id){Ok(source)=>{self.research_ui.preview=Some(source);self.research_ui.selected=None;self.research_ui.cue=None;},Err(e)=>self.status_banner=e}}
-                            }else if ui.button("Import to video library").clicked(){match crate::reference_desk::path_at(&crate::reference_desk::root(),&entry.id){Ok(path)=>self.research_media(path,entry.name),Err(e)=>self.status_banner=e}}
+                                if ui.add_enabled(entry.bytes>0&&entry.bytes<=1_000_000,egui::Button::new("Preview transcript")).clicked(){match crate::reference_desk::preview_at(&crate::reference_desk::root(),&entry.id){Ok(source)=>{self.research_ui.preview=Some(source);self.research_ui.selected=None;self.research_ui.cue=None;},Err(e)=>self.status_banner=e}}
+                            }else if ui.add_enabled(entry.bytes>0&&entry.bytes<=128*1024*1024,egui::Button::new("Import to video library")).clicked(){match crate::reference_desk::path_at(&crate::reference_desk::root(),&entry.id){Ok(path)=>self.research_media(path,entry.name),Err(e)=>self.status_banner=e}}
+                            if entry.bytes==0{ui.small("This file is empty. Save it again in Reference Desk.");}else if entry.bytes>if matches!(entry.kind.as_str(),"txt"|"srt"){1_000_000}else{128*1024*1024}{ui.small("Use a smaller transcript or a shorter/compressed media copy (1 MB text / 128 MiB media).");}
                             ui.separator();
                         });
                     }
