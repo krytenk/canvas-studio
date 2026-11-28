@@ -26,8 +26,8 @@ def run(binary,chrome):
    page.wait_for_function("() => document.querySelector('#session-access-error').textContent.includes('this running Canvas Studio address')")
    page.get_by_label('Private studio session link',exact=True).fill(url);page.get_by_role('button',name='Connect this browser',exact=True).click()
    page.wait_for_selector('#session-access:not([open])',state='attached');page.wait_for_function("() => document.querySelector('#document-title').value==='Untitled Design'")
-   page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('.ai-model-card')
-   page.locator('#ai-connections summary').click()
+   page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('#ai-model-select option',state='attached')
+   if not page.locator('#ai-connections').evaluate('(e)=>e.open'):page.locator('#ai-connections summary').click()
    fake={'kaggle_username':'isolated-test','kaggle_token':'fake-kaggle-key','hf_token':'fake-hf-key','civitai_token':'fake-civitai-key'}
    for key,value in fake.items():page.locator(f'#ai-connections-form [name={key}]').fill(value)
    # Expire the in-memory session, then follow the complete link in the same tab.
@@ -53,6 +53,7 @@ def run(binary,chrome):
     route.fulfill(status=200,content_type='application/json',body=json.dumps({'id':id}))
    page.route('**/api/ai/action',action)
    page.route('**/api/film/jobs',lambda route:route.fulfill(status=200,content_type='application/json',body=json.dumps({'jobs':jobs})))
+   page.locator('#ai-model-browser > summary').click()
    page.locator('#ai-search').locator('xpath=..').locator('summary').click()
    for query,expected in [('realistic','1 results'),('empty','No models matched'),('error','denied this request')]:
     page.locator('#ai-search [name=query]').fill(query);page.get_by_role('button',name='Search live catalog',exact=True).click()

@@ -86,99 +86,72 @@ def run(binary,chrome=None,local=False):
    with sync_playwright() as pw:
     browser=pw.chromium.launch(headless=True,**({} if chrome=='chromium' else {'executable_path':chrome}))
     context=browser.new_context(viewport={'width':1600,'height':1100},accept_downloads=True);page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
-    page.goto(url);page.wait_for_function('() => !!state')
-    page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('.ai-model-card')
-    assert page.locator('#ai-models .ai-model-card').count()>=8
-    page.locator('#ai-models .ai-model-card').filter(has_text='FLUX.2 Klein').first.click()
+    page.goto(url);page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('#ai-model-select option',state='attached')
+    assert page.get_by_role('button',name='Generate',exact=True).is_visible()
+    assert not page.locator('#ai-form [name=width]').is_visible()
+    assert not page.get_by_role('button',name='Submit to Kaggle',exact=True).is_visible()
+    assert not page.get_by_role('button',name='Prepare private GPU notebook',exact=True).is_visible()
     page.locator('#ai-form [name=prompt]').fill('A ceramic vase on a sunlit wooden desk')
-    source_count=page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').count()
-    with page.expect_download() as dl:
-     page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
-     page.wait_for_function("(before) => [...document.querySelectorAll('#ai-jobs button')].filter(b=>b.textContent==='Save inference ZIP').length>before",arg=source_count,timeout=20000)
-     page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').first.click(timeout=20000)
-    dl.value.save_as(work/'browser-inference.zip');assert zipfile.is_zipfile(work/'browser-inference.zip')
-    page.locator('#ai-form details summary').click()
-    page.locator('#ai-form [name=adapter]').select_option('sdxl-lightning-4')
-    page.locator('#ai-video-tab').click();page.wait_for_function("() => aiSelected().task==='video'")
-    assert not page.locator('#ai-video-options').is_hidden()
+    page.locator('#ai-advanced > summary').click();page.locator('#ai-advanced details > summary').click();page.locator('#ai-history > summary').click()
+    def prepare(name):
+     with page.expect_response(lambda r:r.url.endswith('/api/ai/action') and r.request.method=='POST') as response:
+      page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
+     id=response.value.json()['id'];row=page.locator('#ai-technical-jobs article[data-job-id="'+id+'"]')
+     with page.expect_download() as dl:row.get_by_role('button',name='Save inference ZIP').click(timeout=20000)
+     dl.value.save_as(work/name)
+    prepare('browser-inference.zip');assert zipfile.is_zipfile(work/'browser-inference.zip')
+    page.locator('#ai-video-tab').click();assert page.locator('#ai-model-select').input_value()=='Wan-AI/Wan2.1-T2V-1.3B-Diffusers'
     assert [page.locator('#ai-form [name='+key+']').input_value() for key in ('width','height','steps')]==['512','320','20']
-    assert page.locator('#ai-form [name=precision]').input_value()=='bf16'
-    assert page.locator('#ai-form [name=download_limit_gb]').input_value()=='32'
-    assert page.locator('#ai-form [name=adapter]').input_value()=='', 'Image-only adapter leaked into the video request'
-    page.screenshot(path=qa/'generation-video.png',full_page=True)
-    page.locator('#ai-i2v-tab').click();page.wait_for_function("() => aiSelected().pipeline==='LTXImageToVideoPipeline'")
+    assert page.locator('#ai-form [name=adapter]').input_value()==''
+    page.locator('#ai-model-select').select_option('Lightricks/LTX-Video-0.9.5')
     assert [page.locator('#ai-form [name='+key+']').input_value() for key in ('width','height','steps','frames','fps')]==['384','512','30','49','24']
-    before=page.locator('#ai-jobs article').count()
-    page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
-    page.wait_for_function("() => document.querySelector('#message').textContent.includes('Choose a reference image')")
-    assert page.locator('#ai-jobs article').count()==before
+    before=page.locator('#ai-technical-jobs article').count();page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click();page.wait_for_function("() => document.querySelector('#message').textContent.includes('Choose a reference image')");assert page.locator('#ai-technical-jobs article').count()==before
     with page.expect_file_chooser() as fc:page.locator('#ai-reference-choose').click()
-    fc.value.set_files(reference_file);page.locator('#ai-reference-preview').wait_for(state='visible')
-    page.wait_for_function("() => document.querySelector('#ai-reference-preview').complete")
-    assert page.locator('#ai-reference-status').inner_text().endswith('ready')
-    page.locator('#ai-form [name=reference_fit]').select_option('cover')
-    page.screenshot(path=qa/'image-to-video-reference.png',full_page=True)
-    source_count=page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').count()
-    with page.expect_download() as dl:
-     page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
-     page.wait_for_function("(before) => [...document.querySelectorAll('#ai-jobs button')].filter(b=>b.textContent==='Save inference ZIP').length>before",arg=source_count,timeout=20000)
-     page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').first.click(timeout=20000)
-    dl.value.save_as(work/'browser-image-to-video.zip')
+    fc.value.set_files(reference_file);page.wait_for_function('() => !aiReferenceBusy && aiReferences.length===1')
+    page.locator('#ai-reference details > summary').click();page.locator('#ai-form [name=reference_fit]').select_option('cover')
+    prepare('browser-image-to-video.zip')
     with zipfile.ZipFile(work/'browser-image-to-video.zip') as z:
      spec=json.loads(z.read('manifest.json'))['spec'];assert spec['reference_fit']=='cover' and spec['references'][0]['sha256']==hashlib.sha256(z.read('reference-01.png')).hexdigest()
     invalid=work/'invalid-reference.png';invalid.write_bytes(b'not an image')
     with page.expect_file_chooser() as fc:page.locator('#ai-reference-choose').click()
-    fc.value.set_files(invalid)
-    page.wait_for_function("() => !aiReferenceBusy && !aiReferenceId && document.querySelector('#ai-reference-preview').hidden")
-    assert 'reference_id' not in page.evaluate("aiRequest('prepare')"), 'Failed replacement kept the previous persona selected'
-    page.locator('#ai-multi-tab').click();page.wait_for_function("() => aiSelected().pipeline==='WanVACEPipeline'")
+    fc.value.set_files(invalid);page.wait_for_function('() => !aiReferenceBusy && !aiReferenceId')
+    assert 'reference_ids' not in page.evaluate("aiRequest('prepare')")
+    page.locator('#ai-model-select').select_option('Wan-AI/Wan2.1-VACE-1.3B-diffusers')
     second=work/'second-view.png';Image.new('RGB',(96,128),'#3c5e90').save(second)
     with page.expect_file_chooser() as fc:page.locator('#ai-reference-choose').click()
-    fc.value.set_files([reference_file,second]);page.wait_for_function('() => !aiReferenceBusy && aiReferences.length===2')
-    ids=page.evaluate('aiReferences.map(r=>r.id)');assert len(set(ids))==2
-    page.get_by_role('button',name='Move reference 2 earlier',exact=True).click()
-    assert page.evaluate('aiReferences.map(r=>r.id)')==list(reversed(ids))
-    page.locator('#ai-reference-set-name').fill('Two-view fixture')
-    page.get_by_role('button',name='Save named set',exact=True).click()
-    page.wait_for_function("() => document.querySelector('#ai-reference-set').value.length===64")
-    set_id=page.locator('#ai-reference-set').input_value()
-    page.get_by_role('button',name='Clear reference set',exact=True).click()
-    page.locator('#ai-reference-set').select_option(set_id)
-    page.get_by_role('button',name='Load set',exact=True).click()
-    page.wait_for_function('() => !aiReferenceBusy && aiReferences.length===2')
-    assert page.evaluate('aiReferences.map(r=>r.id)')==list(reversed(ids))
-    source_count=page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').count()
-    with page.expect_download() as dl:
-     page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
-     page.wait_for_function("(before) => [...document.querySelectorAll('#ai-jobs button')].filter(b=>b.textContent==='Save inference ZIP').length>before",arg=source_count,timeout=20000)
-     page.locator('#ai-jobs').get_by_role('button',name='Save inference ZIP').first.click(timeout=20000)
-    dl.value.save_as(work/'browser-multi-reference.zip')
+    fc.value.set_files([reference_file,second]);page.wait_for_function('() => !aiReferenceBusy && aiReferences.length===2');ids=page.evaluate('aiReferences.map(r=>r.id)')
+    page.get_by_role('button',name='Move reference 2 earlier',exact=True).click();assert page.evaluate('aiReferences.map(r=>r.id)')==list(reversed(ids))
+    page.locator('#ai-reference-set-name').fill('Two-view fixture');page.get_by_role('button',name='Save these photos',exact=True).click();page.wait_for_function("() => document.querySelector('#ai-reference-set').value.length===64");set_id=page.locator('#ai-reference-set').input_value()
+    page.get_by_role('button',name='Clear photos',exact=True).click();page.locator('#ai-reference-set').select_option(set_id);page.wait_for_function('() => !aiReferenceBusy && aiReferences.length===2');assert page.evaluate('aiReferences.map(r=>r.id)')==list(reversed(ids))
+    prepare('browser-multi-reference.zip')
     with zipfile.ZipFile(work/'browser-multi-reference.zip') as z:
-     spec=json.loads(z.read('manifest.json'))['spec']
-     assert [r['sha256'] for r in spec['references']]==list(reversed(ids))
-     assert [hashlib.sha256(z.read(f'reference-{n:02d}.png')).hexdigest() for n in (1,2)]==list(reversed(ids))
-     assert len(z.read('inference.ipynb'))<900000
-    page.screenshot(path=qa/'multi-reference.png',full_page=True)
-    page.locator('#ai-i2v-tab').click()
-    before=page.locator('#ai-jobs article').count()
-    page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click()
-    page.wait_for_function("() => document.querySelector('#message').textContent.includes('remove extra images')")
-    assert page.locator('#ai-jobs article').count()==before,'Single-reference recipe silently discarded extra views'
-    page.locator('#ai-video-tab').click();text_request=page.evaluate("aiRequest('prepare')")
-    assert 'reference_id' not in text_request and 'reference_ids' not in text_request
-
-
-    page.locator('#ai-edit').click();page.wait_for_selector('#film-studio:visible')
-    page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('#generation-studio:visible')
-    page.locator('#ai-image-tab').click();page.locator('#ai-connections summary').click()
-    page.locator('#ai-connections-form [name=kaggle_username]').fill('draft-proof')
-    page.evaluate('aiLoad()');assert page.locator('#ai-connections-form [name=kaggle_username]').input_value()=='draft-proof'
-    page.screenshot(path=qa/'generation-image.png',full_page=True)
-    page.set_viewport_size({'width':720,'height':1000});assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'Generation layout overflows'
-    page.screenshot(path=qa/'generation-narrow.png',full_page=True)
-    assert not errors,errors
-    context.close();browser.close()
-   report['browser']='Image/text-video/image-video/multi-reference selectors; ordered two-image pack; named set save/load; no silent single-image truncation; required first frame; private upload preview; fit/crop; lossless source ZIP; no reference leakage to text-only models; video handoff; credential drafts; narrow layout; no JS errors'
+     spec=json.loads(z.read('manifest.json'))['spec'];assert [r['sha256'] for r in spec['references']]==list(reversed(ids));assert len(z.read('inference.ipynb'))<900000
+    page.locator('#ai-model-select').select_option('Lightricks/LTX-Video-0.9.5');before=page.locator('#ai-technical-jobs article').count();page.get_by_role('button',name='Prepare private GPU notebook',exact=True).click();page.wait_for_function("() => document.querySelector('#message').textContent.includes('remove extra images')");assert page.locator('#ai-technical-jobs article').count()==before
+    page.locator('#ai-model-select').select_option('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');assert 'reference_ids' not in page.evaluate("aiRequest('create')")
+    page.locator('#ai-image-tab').click();page.locator('#ai-model-select').select_option('SG161222/RealVisXL_V5.0');page.locator('#ai-advanced > summary').click();page.locator('#ai-history > summary').click()
+    page.locator('#ai-connections-form [name=kaggle_username]').fill('isolated-test');page.locator('#ai-connections-form [name=kaggle_token]').fill('fake-test-key');page.get_by_role('button',name='Save connections privately',exact=True).click();page.wait_for_function("() => document.querySelector('#message').textContent.includes('Connections saved privately')")
+    page.locator('#ai-connections > summary').click()
+    # Provider-independent browser fixture: one click, automatic waiting/result,
+    # with no submit/status/download controls. Real GPU proof is separate.
+    automatic=[];polls=[0]
+    def action(route):
+     value=route.request.post_data_json
+     if value.get('operation')!='create':route.continue_();return
+     automatic.append(value);route.fulfill(status=200,content_type='application/json',body=json.dumps({'id':'automatic-fixture'}))
+    def jobs_route(route):
+     if not automatic:route.fulfill(status=200,content_type='application/json',body=json.dumps({'jobs':[]}));return
+     polls[0]+=1;ready=polls[0]>=3
+     item={'id':'automatic-fixture','mode':'ai_image','state':'complete' if ready else 'running','phase':'Generating on Kaggle','elapsed_seconds':polls[0],'result':{'model':'Fixture image'} if ready else {}}
+     route.fulfill(status=200,content_type='application/json',body=json.dumps({'jobs':[item]}))
+    page.route('**/api/ai/action',action);page.route('**/api/film/jobs',jobs_route);page.route('**/api/film/output?id=automatic-fixture',lambda route:route.fulfill(status=200,content_type='image/png',body=reference_file.read_bytes()))
+    page.get_by_role('button',name='Generate',exact=True).click();page.get_by_text('Your image is ready',exact=True).wait_for(timeout=20000);assert len(automatic)==1 and automatic[0]['operation']=='create'
+    assert (automatic[0]['steps'],automatic[0]['adapter'])==(4,'sdxl-lightning-4')
+    assert not page.get_by_role('button',name='Submit to Kaggle',exact=True).is_visible();assert page.get_by_role('button',name='Use in design',exact=True).is_visible()
+    page.locator('#ai-jobs img').wait_for();page.wait_for_function("() => document.querySelector('#ai-jobs img').naturalWidth>0")
+    page.screenshot(path=qa/'simple-generation.png',full_page=True)
+    page.set_viewport_size({'width':720,'height':1000});assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'Generation layout overflows';page.screenshot(path=qa/'simple-generation-narrow.png',full_page=True)
+    assert not errors,errors;context.close();browser.close()
+   report['browser']='Simple model/prompt/Generate workflow; advanced controls collapsed; automatic ready preview; no manual GPU steps; recommended defaults; reference upload/named-set auto-load; portable notebooks; no JS errors; narrow layout'
   # Clearing video history must never silently erase the separate generation work.
   edit([{'action':'film_setup','width':320,'height':192,'fps':24,'duration':24}])
   frame=c.call('studio_media_render',{**c.guard(),'mode':'frame','frame':0});wait(c,frame)

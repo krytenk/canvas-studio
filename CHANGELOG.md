@@ -1,5 +1,18 @@
 # Changes
 
+## 1.19.0 — model, prompt, Generate
+
+- Replace the technical generation screens in desktop and browser with a model
+  selector, prompt, optional photos and one Generate button. Advanced settings,
+  notebook tools and technical history stay in collapsed panels.
+- Submit, monitor and download Kaggle outputs automatically in background workers,
+  with ready previews and ordinary Use/Save actions. Reuse existing connections.
+- Select reviewed fast image defaults; load saved character photos immediately.
+- Preserve run identity on disconnection; Continue checks the same job without
+  repeating GPU submission. Keep remote waits separate from local render slots
+  and reject duplicate generation for an active document.
+
+
 ## 1.18.0 — reusable multi-image subject references
 
 - Add Reference video in native/browser studios with one to four distinct views,

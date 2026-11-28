@@ -1,4 +1,4 @@
-# Generation studio — 1.18.0
+# Generation studio — 1.19.0
 
 Canvas Studio has separate **Design**, **Generate** and **Video studio** workspaces.
 Generate works in desktop, browser and MCP. It searches model metadata, prepares
@@ -23,24 +23,45 @@ that form. Task history also labels the provider and query. Connections lists
 which credentials are saved; this is not a claim that a provider has validated
 those credentials. Search/registration uses the saved provider token where needed.
 
-## Start here
+## Everyday use
 
-1. Install the small provider tools: `python3 scripts/setup_generation.py`.
-2. Open **Generate → Connections & storage**. Enter your Kaggle username and API
-   token there, never in a prompt or chat. Google sign-in works normally: create
-   the separate token at [Kaggle API settings](https://www.kaggle.com/settings/api).
-   Use your profile handle as the username, not your Google email or password. Tokens are held in a private local file
-   outside projects and Git. Optional Hugging Face/Civitai credentials support
-   authenticated local downloads and metadata access.
-3. Start with RealVisXL/SDXL for portraits or Wan 2.1 1.3B for modest video tests.
-   Choose a prompt, resolution, seed and memory settings. **Prepare private GPU
-   notebook** works before connecting Kaggle and gives you an inspectable ZIP.
-4. **Submit to Kaggle** uploads the prompt and any explicitly selected reference
-   page into a private notebook, with a selected 15/30/60 minute limit and a T4
-   accelerator request. GPU quota, account eligibility and availability are
-   controlled by Kaggle. There is no paid endpoint or automatic wallet top-up.
-5. Check the run, download the finished asset, then place it on the design page or
-   add it to the video edit. Ordinary undo, portable saving and later editing work.
+Desktop and browser now use the same short workflow:
+
+1. Open **Generate**, choose **Images** or **Video**, and select a model.
+2. Describe what you want. Add photos if the selected model uses them, or select
+   a saved character; saved photos load immediately.
+3. Click **Generate**. The studio submits a private Kaggle job, monitors it and
+   downloads the verified result automatically. The ready image/video appears in
+   **Your creations**, with **Use in design / Use in video** and **Download**.
+
+You do not need to prepare a notebook, submit it separately, check its status or
+fetch its finished output. Recommended model settings are selected automatically.
+RealVisXL/SDXL's simple image preset uses the reviewed four-step Lightning adapter;
+**More options** retains editable resolution, precision, seed and other settings.
+Notebook preparation, local inference and manual submission are developer tools
+inside that panel. Connection settings and technical history start collapsed when
+an existing connection is configured. Neither interface requires naming/saving a
+reference set before generating.
+
+The one-time setup is still needed on a new computer: install the small provider
+tools with `python3 scripts/setup_generation.py`, then save your Kaggle profile
+handle and API token in **Connection settings**. Existing saved keys are reused.
+Google sign-in is fine: create the separate token at
+[Kaggle API settings](https://www.kaggle.com/settings/api); do not enter a Google
+password in the studio.
+
+Generation runs in the local background worker, rather than depending on the
+browser's status button or an open Generate panel. Editing remains available.
+Progress shows preparing, waiting for a GPU, generating and saving; it does not
+invent a percentage for unmeasured model work. Duplicate Generate clicks for an
+active document are rejected. Remote waits use their own worker slots so they do
+not consume the local film-render slots.
+
+If a connection fails repeatedly, **Continue** checks the recorded run and resumes
+its download. It does not submit another GPU job. An unconfirmed submission is
+recorded for inspection rather than automatically retried. Cancellation under
+Technical history stops local waiting; stop a remote GPU notebook in Kaggle itself.
+GPU availability, queueing and your account allowance still determine the wait.
 
 For gated remote weights, accept the publisher's licence using your own provider
 account and add `HF_TOKEN` / `CIVITAI_API_KEY` in **Kaggle Secrets**, making those
@@ -133,7 +154,7 @@ Selecting an incompatible model clears the previous model's adapter.
 
 ## Image to video and uploaded references
 
-Choose **Generate → Image to video** in desktop or browser, then choose a first
+Choose **Generate → Video → LTX Video** in desktop or browser, then choose a first
 frame. PNG, JPEG and WebP uploads are limited to 25 MB / 16 megapixels. The app
 applies EXIF rotation, strips source metadata, normalizes to an immutable PNG and
 limits the longest edge to 2048 pixels. Uploading does not add or replace a design
@@ -181,7 +202,7 @@ Kaggle adapter can use an already uploaded reference ID with the same document I
 
 ## Multiple subject references and consistent shots
 
-Choose **Generate → Reference video** in desktop or browser. Upload two to four
+Choose **Generate → Video → Wan VACE** in desktop or browser. Upload two to four
 views of the **same adult character**, ideally with consistent hair, wardrobe and
 lighting. Each image stays separate: the app does not build a collage or substitute
 timed keyframes. Add/remove/reorder views before submission. A single-image recipe

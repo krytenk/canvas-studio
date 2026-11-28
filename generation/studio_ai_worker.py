@@ -12,7 +12,10 @@ def run(w):
    while p.poll() is None:
     if w.cancel.exists():raise Cancelled()
     if time.monotonic()-start>7200:raise ValueError('Generation exceeded the local two-hour limit; project preserved')
-    atomic(w.progress,dict(state='running',phase='generation / provider request',progress=0,elapsed_seconds=round(time.monotonic()-start),worker_pid=os.getpid()));time.sleep(.25)
+    workflow={}
+    try:workflow=json.loads((folder/'workflow.json').read_text())
+    except (OSError,ValueError):pass
+    atomic(w.progress,dict(workflow,state='running',phase=workflow.get('phase','Getting ready'),progress=0,elapsed_seconds=round(time.monotonic()-start),worker_pid=os.getpid()));time.sleep(.25)
    if p.returncode or not result.exists():raise ValueError('Generation worker stopped; see local tools setup and available GPU')
    data=json.loads(result.read_text())
    if not data.get('ok'):raise ValueError(data.get('error','Generation failed'))

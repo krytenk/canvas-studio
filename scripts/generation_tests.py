@@ -16,6 +16,35 @@ class GenerationTests(unittest.TestCase):
   self.request={'model_id':'SG161222/RealVisXL_V5.0','prompt':'Fictional adult fashion creator in a tailored jacket, natural window light','width':512,'height':512,'steps':4,'seed':17,'precision':'fp16','content_mode':'flexible','document_id':'test-document'}
  def tearDown(self):self.reference_patch.stop();self.preflight_patch.stop();self.env.stop();self.temp.cleanup()
  def job(self,name='job-1234567890abcdef'):p=self.folder/name;p.mkdir(exist_ok=True);return p
+ def test_worker_bridge_preserves_automatic_phase_and_process_liveness(self):
+  import studio_ai_worker
+  folder=self.job();(folder/'workflow.json').write_text(json.dumps({'phase':'Generating on Kaggle','run_id':'run-'+'a'*24,'automatic':True}));(folder/'ai-result.json').write_text(json.dumps({'ok':True,'result':{'task':'image'}}))
+  worker=SimpleNamespace(folder=folder,spec={'request':self.request,'python':sys.executable},cancel=folder/'cancel',progress=folder/'progress.json')
+  process=MagicMock();process.poll.side_effect=[None,0,0];process.returncode=0;states=[]
+  media=SimpleNamespace(Cancelled=RuntimeError,atomic=lambda path,value:states.append(value))
+  with patch.dict(sys.modules,{'studio_media':media}),patch.object(studio_ai_worker.subprocess,'Popen',return_value=process),patch.object(studio_ai_worker.time,'sleep'):
+   self.assertEqual(studio_ai_worker.run(worker),{'task':'image'})
+  self.assertEqual(states[0]['phase'],'Generating on Kaggle');self.assertIn('worker_pid',states[0]);self.assertEqual(states[0]['run_id'],'run-'+'a'*24)
+ def test_one_click_submits_once_polls_and_downloads_without_browser_actions(self):
+  folder=self.job();phases=[];result={'task':'image','model':self.request['model_id'],'downloaded':True}
+  states=[{'remote_state':'queued'},{'remote_state':'running'},{'remote_state':'complete'}]
+  with patch.object(ai,'submit',return_value={'run_id':'run-'+'a'*24}) as submit,patch.object(ai,'run_record',return_value={'timeout':900,'kernel':'studio-test/one-click'}),patch.object(ai,'remote_status',side_effect=states),patch.object(ai,'remote_download',return_value=result) as download,patch.object(ai.time,'sleep'):
+   out=ai.create(self.request,folder,phases.append)
+  self.assertEqual(submit.call_count,1);self.assertEqual(download.call_count,1);self.assertTrue(out['automatic']);self.assertEqual(phases[-1]['phase'],'Ready');self.assertIn('Waiting for a GPU',[p['phase'] for p in phases])
+ def test_one_click_resume_and_network_recovery_never_submit_another_run(self):
+  request={'run_id':'run-'+'b'*24,'document_id':'test-document'}
+  with patch.object(ai,'submit') as submit,patch.object(ai,'run_record',return_value={'timeout':900,'kernel':'studio-test/one-click'}),patch.object(ai,'remote_status',side_effect=[ValueError('network'),{'remote_state':'complete'}]),patch.object(ai,'remote_download',return_value={'task':'video'}) as download,patch.object(ai.time,'sleep'):
+   self.assertTrue(ai.create(request,self.job())['automatic'])
+  submit.assert_not_called();download.assert_called_once()
+ def test_one_click_remote_error_and_repeated_disconnect_do_not_retry_submission(self):
+  request={'run_id':'run-'+'b'*24,'document_id':'test-document'}
+  for status in ([{'remote_state':'error','log_tail':'GPU memory exceeded'}],[ValueError('offline')]*5):
+   with patch.object(ai,'submit') as submit,patch.object(ai,'run_record',return_value={'timeout':900,'kernel':'studio-test/one-click'}),patch.object(ai,'remote_status',side_effect=status),patch.object(ai,'remote_download') as download,patch.object(ai.time,'sleep'),self.assertRaises(ValueError):ai.create(request,self.job())
+   submit.assert_not_called();download.assert_not_called()
+ def test_one_click_recommended_image_defaults_preserve_explicit_advanced_settings(self):
+  basic=ai.creation_defaults({'model_id':self.request['model_id'],'prompt':'A notebook'})
+  self.assertEqual((basic['steps'],basic['guidance'],basic['adapter']),(4,0,'sdxl-lightning-4'))
+  custom=ai.creation_defaults({**basic,'steps':28,'adapter':''});self.assertEqual(custom['steps'],28);self.assertEqual(custom['adapter'],'')
  def test_validation_rejects_research_advertising_unsafe_limits_and_bad_adapter(self):
   for update in [{'model_id':'Qwen/Qwen-Image-2.1'},{'width':99999},{'frames':122,'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers'},{'seed':-1},{'quantization':'nf4'},{'model_id':'Wan-AI/Wan2.1-T2V-1.3B-Diffusers','adapter':'sdxl-lightning-4'}]:
    with self.subTest(update=update),self.assertRaises(ValueError):ai.spec({**self.request,**update})

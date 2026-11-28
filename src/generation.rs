@@ -553,6 +553,7 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         .ok_or("Choose a generation operation")?
         .to_string();
     if ![
+        "create",
         "search",
         "register",
         "prepare",
@@ -566,6 +567,18 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         return Err("Unsupported generation operation".into());
     }
     let _ = python()?;
+    if operation == "create"
+        && crate::media_service::jobs(&project.document_id)?["jobs"]
+            .as_array()
+            .is_some_and(|jobs| {
+                jobs.iter().any(|j| {
+                    j["state"] == "running"
+                        && ["ai_image", "ai_video"].contains(&j["mode"].as_str().unwrap_or(""))
+                })
+            })
+    {
+        return Err("A generation is already running for this document. Your creation will appear automatically".into());
+    }
     if ["reference_id", "reference_ids", "reference_page"]
         .iter()
         .filter(|k| value.get(**k).is_some())
@@ -595,7 +608,7 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         .find(|m| m["id"] == value["model_id"])
         .map(|m| m["task"].as_str().unwrap_or("image").to_string())
         .unwrap_or("image".into());
-    if operation == "download" {
+    if operation == "download" || operation == "create" && value["run_id"].is_string() {
         let id = value["run_id"].as_str().ok_or("Choose a remote run")?;
         if id.len() != 28
             || !id.starts_with("run-")
@@ -614,7 +627,7 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
         value["task"] = json!(task);
     }
     let mode = match operation.as_str() {
-        "generate" | "download" => {
+        "create" | "generate" | "download" => {
             if value["task"].as_str().unwrap_or(&task) == "video" {
                 "ai_video"
             } else {
@@ -626,32 +639,38 @@ pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Resul
     };
     let snapshot = project.clone();
     value["document_id"] = json!(project.document_id);
-    crate::media_service::begin(&project.document_id, revision, mode, move |folder| {
-        if let Some(bytes) = reference {
-            let path = folder.join("reference.png");
-            fs::write(&path, bytes).map_err(|e| e.to_string())?;
-            value["reference"] = json!(path);
-        }
-        if let Some(images) = references {
-            let mut paths = Vec::new();
-            for (index, bytes) in images.iter().enumerate() {
-                let path = folder.join(format!("reference-{:02}.png", index + 1));
+    crate::media_service::begin_generation(
+        &project.document_id,
+        revision,
+        mode,
+        operation == "create",
+        move |folder| {
+            if let Some(bytes) = reference {
+                let path = folder.join("reference.png");
                 fs::write(&path, bytes).map_err(|e| e.to_string())?;
-                paths.push(path);
+                value["reference"] = json!(path);
             }
-            value["references"] = json!(paths);
-        }
-        if let Some(page) = value["reference_page"].as_u64() {
-            let bytes = crate::studio_catalog::thumbnail(&snapshot, page as usize, 1600)?;
-            let path = folder.join("reference.png");
-            fs::write(&path, bytes).map_err(|e| e.to_string())?;
-            value["reference"] = json!(path);
-        }
-        crate::media_service::invoke(
-            folder,
-            &json!({"op":"ai","request":value,"python":python()?}),
-        )
-    })
+            if let Some(images) = references {
+                let mut paths = Vec::new();
+                for (index, bytes) in images.iter().enumerate() {
+                    let path = folder.join(format!("reference-{:02}.png", index + 1));
+                    fs::write(&path, bytes).map_err(|e| e.to_string())?;
+                    paths.push(path);
+                }
+                value["references"] = json!(paths);
+            }
+            if let Some(page) = value["reference_page"].as_u64() {
+                let bytes = crate::studio_catalog::thumbnail(&snapshot, page as usize, 1600)?;
+                let path = folder.join("reference.png");
+                fs::write(&path, bytes).map_err(|e| e.to_string())?;
+                value["reference"] = json!(path);
+            }
+            crate::media_service::invoke(
+                folder,
+                &json!({"op":"ai","request":value,"python":python()?}),
+            )
+        },
+    )
 }
 fn import_video(
     p: &mut Project,

@@ -1,5 +1,21 @@
 # Canvas Studio validation
 
+## 1.19.0 simple background generation
+
+97 local Rust tests and 36 provider-independent Python checks pass. Workflow tests
+cover single submission across queued/running/complete phases, verified automatic
+download, resuming a recorded run without a new submission, transient connection
+recovery, terminal failure, reviewed defaults and the worker's real phase/PID
+progress bridge. The latter caught and fixes a duplicate-phase keyword error before
+GPU submission during the first live attempt.
+
+Updated isolated browser tests check the model/prompt/Generate screen, collapsed
+technical settings, automatic result preview without status/download steps, saved
+photo selection, lossless one/multi-photo notebooks, narrow layout and no page
+errors. Session authentication, credential draft preservation and live-search
+fixtures also pass. Native screenshots exercise the matching simplified screen.
+Real remote evidence is recorded separately in the GPU acceptance report.
+
 ## 1.18.0 multiple subject references
 
 97 local Rust tests pass, including private named-set reuse across documents,

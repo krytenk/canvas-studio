@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from studio_inference import validate,run as infer,REPO,select_files,reference_items,reference_fingerprint
 HERE=Path(__file__).resolve().parent
-VERSION='1.18.0';KAGGLE_VERSION='2.2.5'
+VERSION='1.19.0';KAGGLE_VERSION='2.2.5'
 def root():
  p=Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'canvas-studio/ai';p.mkdir(parents=True,exist_ok=True);p.chmod(0o700);return p
 def write(path,value):
@@ -318,8 +318,48 @@ def remote_download(v,folder):
  if record.get('reference_sha256') and (not receipt.get('reference_used') or (receipt.get('reference') or {}).get('sha256')!=record['reference_sha256']):raise ValueError('Downloaded result used a different reference image; nothing was imported')
  shutil.copyfile(source,folder/('frame.png' if task=='image' else 'movie.mp4'));write(folder/'receipt.json',receipt)
  return {'task':task,'model':record['model']['id'],'kernel':record['kernel'],'run_id':v['run_id'],'receipt':receipt,'downloaded':True}
+def creation_defaults(v):
+ """One-click requests use reviewed presets; explicit advanced choices win."""
+ model=next((m for m in catalog()['models'] if m['id']==v.get('model_id')),None)
+ if not model:raise ValueError('Choose a model')
+ return {**model.get('easy',{}),**v}
+def create(v,folder,progress=lambda value:None):
+ """Submit once, monitor in the worker, then deliver the verified local asset."""
+ folder=Path(folder);v=creation_defaults(v) if not v.get('run_id') else dict(v)
+ run_id=v.get('run_id');document=v.get('document_id');started=time.monotonic()
+ def update(phase,**extra):
+  progress({'phase':phase,'run_id':run_id,'automatic':True,**extra})
+ if not run_id:
+  update('Getting ready')
+  try:submitted=submit(v,folder)
+  except Exception:
+   # A timed-out push may already exist. Preserve its identity, never resubmit it.
+   manifest=folder/'inference/manifest.json'
+   if manifest.exists():
+    kernel=json.loads(manifest.read_text())['kernel'];candidate='run-'+hashlib.sha256(kernel.encode()).hexdigest()[:24]
+    if (root()/'runs'/(candidate+'.json')).exists():run_id=candidate;update('Check connection',needs_attention=True)
+   raise
+  run_id=submitted['run_id']
+ record=run_record(run_id,document)
+ limit=min(7200,max(300,record.get('timeout',1800)+600));failures=0
+ while time.monotonic()-started<limit:
+  try:state=remote_status({'run_id':run_id,'document_id':document});failures=0
+  except Exception as error:
+   failures+=1;update('Reconnecting to Kaggle',needs_attention=failures>=5)
+   if failures>=5:raise ValueError('Connection interrupted. Use Continue to check the same generation; it will not submit another GPU run.') from error
+   time.sleep(min(30,failures*5));continue
+  remote=state['remote_state'];update({'queued':'Waiting for a GPU','running':'Generating on Kaggle','complete':'Saving your creation','error':'Generation stopped'}.get(remote,'Getting ready'),remote_state=remote)
+  if remote=='complete':
+   result=remote_download({'run_id':run_id,'document_id':document},folder);update('Ready',remote_state='complete')
+   return {**result,'automatic':True,'source_available':(folder/'motion-source.zip').is_file(),'url':'https://www.kaggle.com/code/'+record['kernel']}
+  if remote=='error':raise ValueError('Kaggle could not finish this generation. '+state.get('log_tail','Open generation details for the provider response.'))
+  time.sleep(10)
+ update('Still running on Kaggle',needs_attention=True)
+ raise ValueError('Kaggle is still working. Use Continue to check this same generation; no new GPU run is needed.')
+
 def execute(v,folder,progress=lambda value:None):
  action=v.get('operation');folder=Path(folder)
+ if action=='create':return create(v,folder,progress)
  if action=='connections':return connection_state()
  if action=='save_connections':return save_settings(v['settings'])
  if action=='search':return search(v)
@@ -336,5 +376,5 @@ def execute(v,folder,progress=lambda value:None):
  raise ValueError('Unknown generation operation')
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--request',type=Path,required=True);p.add_argument('--result',type=Path,required=True);args=p.parse_args()
- try:write(args.result,{'ok':True,'result':execute(json.loads(args.request.read_text()),args.result.parent)})
+ try:write(args.result,{'ok':True,'result':execute(json.loads(args.request.read_text()),args.result.parent,lambda value:write(args.result.parent/'workflow.json',value if isinstance(value,dict) else {'phase':str(value)}))})
  except Exception as error:write(args.result,{'ok':False,'error':redact(str(error))})

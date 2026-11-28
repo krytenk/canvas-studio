@@ -34,7 +34,14 @@ shell, arbitrary-code or paid-inference tools. Notebook ZIPs include prompts and
 explicit references but not tokens. Configure gated-download secrets within
 Kaggle; never give credentials to a coding agent in chat.
 
-The existing live-editor MCP now has **15 tools**. Its `studio_generation` tool
+The existing live-editor MCP has **15 tools**. In 1.19, `studio_generation`
+`operation: "create"` takes the model, prompt and optional reference IDs, then
+handles submission, remote monitoring and verified local download in one job.
+Poll the ordinary local media job for progress/result, not separate remote steps.
+Passing an existing `run_id` to `create` continues that same generation and never
+submits another one. The lower-level operations remain for advanced integrations.
+
+Its `studio_generation` tool
 adds discovery/registration, notebook preparation, local inference and Kaggle
 orchestration with the live document/revision guards. Use `studio_media_job` to
 poll/cancel/save task outputs and `studio_edit` with `ai_import` to place a result.

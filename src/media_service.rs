@@ -15,6 +15,7 @@ use std::{
     },
 };
 static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static REMOTE_GENERATIONS: AtomicUsize = AtomicUsize::new(0);
 static SCRIPT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 const WORKER_FILES: &[(&str, &str)] = &[
     ("studio_ai.py", include_str!("../generation/studio_ai.py")),
@@ -154,42 +155,55 @@ pub(crate) fn begin(
     mode: &str,
     task: impl FnOnce(&Path) -> Result<Value, String> + Send + 'static,
 ) -> Result<String, String> {
+    begin_generation(doc, revision, mode, false, task)
+}
+pub(crate) fn begin_generation(
+    doc: &str,
+    revision: u64,
+    mode: &str,
+    remote: bool,
+    task: impl FnOnce(&Path) -> Result<Value, String> + Send + 'static,
+) -> Result<String, String> {
+    let counter = if remote { &REMOTE_GENERATIONS } else { &ACTIVE };
     if storage_bytes(&crate::media_store::root().join("jobs")) > 1024 * 1024 * 1024 {
         return Err("Render history exceeds 1 GiB. Save any movies you need, then clear finished tasks in Video or Generate studio".into());
     }
-    if ACTIVE.fetch_add(1, Ordering::SeqCst) >= 2 {
-        ACTIVE.fetch_sub(1, Ordering::SeqCst);
-        return Err(
-            "Two media jobs are already running. Wait or cancel one before starting another".into(),
-        );
+    if counter.fetch_add(1, Ordering::SeqCst) >= 2 {
+        counter.fetch_sub(1, Ordering::SeqCst);
+        return Err(if remote {
+            "Two generations are already running. Please wait for one to finish"
+        } else {
+            "Two media jobs are already running. Wait or cancel one before starting another"
+        }
+        .into());
     }
     let id = generate_document_id();
     let folder = match id_path(&id) {
         Ok(p) => p,
         Err(e) => {
-            ACTIVE.fetch_sub(1, Ordering::SeqCst);
+            counter.fetch_sub(1, Ordering::SeqCst);
             return Err(e);
         }
     };
     if let Err(e) = fs::create_dir(&folder) {
-        ACTIVE.fetch_sub(1, Ordering::SeqCst);
+        counter.fetch_sub(1, Ordering::SeqCst);
         return Err(e.to_string());
     }
     if let Err(e) = write(
         &folder.join("meta.json"),
         &json!({"id":id,"document_id":doc,"source_revision":revision,"mode":mode,"owner_pid":std::process::id(),"created_at_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64}),
     ) {
-        ACTIVE.fetch_sub(1, Ordering::SeqCst);
+        counter.fetch_sub(1, Ordering::SeqCst);
         return Err(e);
     }
     std::thread::spawn(move || {
-        struct Release;
+        struct Release(&'static AtomicUsize);
         impl Drop for Release {
             fn drop(&mut self) {
-                ACTIVE.fetch_sub(1, Ordering::SeqCst);
+                self.0.fetch_sub(1, Ordering::SeqCst);
             }
         }
-        let _release = Release;
+        let _release = Release(counter);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task(&folder)))
             .unwrap_or_else(|_| Err("Media preparation stopped; project preserved".into()));
         if !folder.join("result.json").exists() {
@@ -435,6 +449,9 @@ pub fn status(id: &str, doc: &str) -> Result<Value, String> {
     };
     for (key, v) in result.as_object().ok_or("Invalid media job state")? {
         value[key] = v.clone();
+    }
+    if let Ok(workflow) = read(&folder.join("workflow.json")) {
+        value["generation"] = workflow;
     }
     if let Some(r) = value.get_mut("result").and_then(Value::as_object_mut) {
         r.remove("output");
