@@ -10,6 +10,7 @@
 label{font-size:11px}.tab-content p,.muted{font-size:11px}.template-card-name{font-size:11px}.template-card-detail{font-size:9px}.top-actions button{font-size:11px}.stage-actions button{font-size:10px}.catalog-filters button{font-size:10px}.eyebrow,.catalog-summary{font-size:9px}.stage-footer{font-size:9px}.tab-content form>.primary{font-size:11px}.page-label{font-size:11px}.inspector-tabs button{font-size:11px}
 
 /* Feedback stays clear of the design controls. */
+.catalog-empty{grid-column:1/-1;padding:20px 4px;line-height:1.6}.catalog-empty p{color:#566475}.catalog-empty button{margin-top:8px}
 #message{top:auto;left:auto;right:20px;bottom:42px;max-width:min(520px,calc(100vw - 90px));z-index:20}
 
 /* The rail never scrolls sideways when a vertical scrollbar is present. */

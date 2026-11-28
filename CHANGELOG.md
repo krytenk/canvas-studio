@@ -1,5 +1,12 @@
 # Changes
 
+## 1.19.1 — clearer workspace navigation
+
+- Return from Video to the clicked design tool immediately, matching Generate and Mockups. Add an explicit Back to design button.
+- Explain empty template searches and let users clear search and category together.
+- Use plain language for preview files in the video library.
+- Exercise all eight Video-to-tool routes and empty-search recovery in the browser regression.
+
 ## 1.19.0 — model, prompt, Generate
 
 - Replace the technical generation screens in desktop and browser with a model

@@ -134,6 +134,21 @@ def run(binary,chrome):
             page.wait_for_function("() => state.elements.length===4")
             page.get_by_role('button',name='Design library',exact=True).click()
             page.wait_for_selector('.template-card img[src]')
+            # Every major workspace must yield to ordinary design tools.
+            for target in ['Design library','Document pages','Text tools','Layer controls','Collection fields','Campaign and brand tools','Product mockups','Image and video generation']:
+                page.get_by_role('button',name='Film studio',exact=True).click()
+                assert page.locator('#film-studio').is_visible()
+                page.get_by_role('button',name=target,exact=True).click()
+                assert not page.locator('#film-studio').is_visible(),target
+            page.get_by_role('button',name='Film studio',exact=True).click()
+            page.locator('#film-close').click()
+            assert not page.locator('#film-studio').is_visible()
+            if not page.locator('#design-panel').is_visible():
+                page.get_by_role('button',name='Design library',exact=True).click()
+            page.get_by_label('Search design library',exact=True).fill('no-such-template-93817')
+            assert page.get_by_role('status').filter(has_text='No matching templates').is_visible()
+            page.get_by_role('button',name='Show all templates',exact=True).click()
+            assert page.locator('.template-card').count()==42
             page.screenshot(path=qa/'studio-gallery.png',full_page=True)
             page.get_by_label('Search design library',exact=True).fill('carousel')
             page.get_by_role('button',name='Preview Small Shifts',exact=True).click()

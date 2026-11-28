@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from studio_inference import validate,run as infer,REPO,select_files,reference_items,reference_fingerprint
 HERE=Path(__file__).resolve().parent
-VERSION='1.19.0';KAGGLE_VERSION='2.2.5'
+VERSION='1.19.1';KAGGLE_VERSION='2.2.5'
 def root():
  p=Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'canvas-studio/ai';p.mkdir(parents=True,exist_ok=True);p.chmod(0o700);return p
 def write(path,value):
