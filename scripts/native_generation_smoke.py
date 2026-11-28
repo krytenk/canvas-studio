@@ -5,6 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def run(binary):
  qa=ROOT/'qa/native-generation';qa.mkdir(parents=True,exist_ok=True)
  env={**os.environ,'DISPLAY':':96','LIBGL_ALWAYS_SOFTWARE':'1','XDG_SESSION_TYPE':'x11','WINIT_X11_SCALE_FACTOR':'1','XDG_DATA_HOME':str(qa/'data')};env.pop('WAYLAND_DISPLAY',None)
+ private=qa/'data/canvas-studio/ai';private.mkdir(parents=True,exist_ok=True);private.chmod(0o700);(private/'connections.json').write_text(__import__('json').dumps({'kaggle_username':'isolated-native-test','kaggle_token':'fake-native-test-token'}));(private/'connections.json').chmod(0o600)
  log=(qa/'native.log').open('wb');xvfb=subprocess.Popen(['Xvfb',':96','-screen','0','1440x1000x24','-nolisten','tcp','-noreset'],stdout=log,stderr=subprocess.STDOUT);app=None
  try:
   for _ in range(50):
