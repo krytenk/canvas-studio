@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def run(binary,chrome):
     qa=ROOT/'qa/workflows';qa.mkdir(parents=True,exist_ok=True)
-    env={**os.environ,'XDG_DATA_HOME':str(qa/('data-'+str(time.time_ns())))}
+    env={**os.environ,'XDG_DATA_HOME':str(qa/('data-'+str(time.time_ns()))),'CANVAS_STUDIO_PROFILE':'publishing'}
     log=(qa/'server.log').open('w');process=subprocess.Popen([str(binary),'--serve-browser','--port','0'],cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT)
     try:
         for _ in range(100):
@@ -22,6 +22,7 @@ def run(binary,chrome):
             page.goto(match[0]);page.locator('#home-tasks .home-task').last.wait_for()
             assert page.locator('#studio-home').is_visible()
             assert page.locator('#home-tasks .home-task').count()==4
+            assert not page.get_by_role('button',name='Image and video generation',exact=True).is_visible()
             page.screenshot(path=qa/'home-desktop.png',full_page=True)
             page.set_viewport_size({'width':700,'height':900})
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
@@ -37,10 +38,13 @@ def run(binary,chrome):
             page.locator('#text-content').fill('A draft that must survive Home')
             page.get_by_role('button',name='Studio home',exact=True).click()
             assert 'Unapplied edits' in page.locator('#home-project-status').inner_text()
-            for task,selector in [('Make a video','#film-studio'),('Create a campaign','#tab-campaign'),('Generate an image','#generation-studio')]:
+            for task,selector in [('Make a video','#film-studio'),('Create a campaign','#tab-campaign'),('Bring in research','#research-studio')]:
                 page.get_by_role('button',name=task,exact=True).click()
                 page.locator(selector).wait_for(state='visible')
                 assert page.evaluate('state.document_id')==doc
+                page.get_by_role('button',name='Studio home',exact=True).click()
+                page.get_by_role('button',name='Continue current project',exact=True).click()
+                assert page.locator(selector).is_visible(),task
                 page.get_by_role('button',name='Studio home',exact=True).click()
             page.get_by_role('button',name='Continue current project',exact=True).click()
             page.get_by_role('button',name='Text tools',exact=True).click()

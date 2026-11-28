@@ -1,5 +1,12 @@
 # Changes
 
+## 1.21.0 — personal Research and a publishing-first profile
+
+- Bring Reference Desk output into a shared Research workspace: scoped saved-file discovery, transcript previews, portable project copies, cited page notes, SRT captions and audio/video library import.
+- Preserve original files, reject changed transcript previews, retain hashes/source timestamps, and protect research with portable version 6 compatibility guards.
+- Offer Research as the fourth starting task. Launchers default to a publishing profile with generation navigation hidden and generation requests rejected; optional personal generation stays an explicit profile choice.
+- Add real-media browser acceptance, cold native reopening, caption-frame rendering, native Research window proofs and publishing-profile checks.
+
 ## 1.20.0 — shared starting workflows
 
 - Start new desktop and browser sessions with the same four tasks: Design a product, Create a campaign, Make a video and Generate an image.

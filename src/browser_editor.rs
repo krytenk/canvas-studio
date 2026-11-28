@@ -27,6 +27,7 @@ impl Drop for Scratch {
     }
 }
 fn validate_document(project: &Project) -> Result<(), String> {
+    crate::reference_desk::validate(project)?;
     crate::campaign::validate(project)?;
     crate::timeline::validate(&project.production.timeline)?;
     if project.pages.is_empty()
@@ -190,6 +191,7 @@ fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request
                 "/app.js",
                 "/studio.js",
                 "/home.js",
+                "/research.js",
                 "/layout.js",
                 "/bundle.js",
                 "/film.js",
@@ -782,7 +784,7 @@ fn state(s: &Session, page: usize) -> Value {
             timeline["clips"][i]["caption"]["family"] = json!(family(st.family));
         }
     }
-    json!({"blank":crate::workflows::is_blank(p),"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p),"timeline":timeline,"mockups":p.production.mockups})
+    json!({"research":crate::reference_desk::summaries(p),"notes":p.pages[page].notes,"blank":crate::workflows::is_blank(p),"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p),"timeline":timeline,"mockups":p.production.mockups})
 }
 fn studio_state(p: &Project) -> Value {
     let s = &p.production.studio;
@@ -839,6 +841,12 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
             r.revision = s.revision;
             return Ok(r);
         }
+    }
+    if base.starts_with("/api/ai/") && !crate::workflows::generation_available() {
+        return Ok(Response::error(
+            403,
+            "Image and video generation are not available in the publishing profile.",
+        ));
     }
     if req.method == "GET" {
         let mut alternate = None;
@@ -954,6 +962,32 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                         "image/png"
                     },
                     fs::read(path).map_err(|_| "Build a proxy to create the poster/waveform")?,
+                    s.revision,
+                ))
+            }
+            "/api/research/library" => Ok(Response::value(
+                json!({"entries":crate::reference_desk::list_at(&crate::reference_desk::root())?,"can_launch":crate::reference_desk::launcher().is_file(),"scope":"Latest 250 saved files from Reference Desk on this computer"}),
+                s.revision,
+            )),
+            "/api/research/preview" => Ok(Response::value(
+                serde_json::to_value(crate::reference_desk::preview_at(
+                    &crate::reference_desk::root(),
+                    &query(&req.path, "id").ok_or("Choose a Reference Desk file")?,
+                )?)
+                .map_err(|e| e.to_string())?,
+                s.revision,
+            )),
+            "/api/research/source" => {
+                let id = query(&req.path, "id").ok_or("Choose a project source")?;
+                let source = s
+                    .project
+                    .production
+                    .research
+                    .iter()
+                    .find(|r| r.id == id)
+                    .ok_or("Source is not in the current project")?;
+                Ok(Response::value(
+                    serde_json::to_value(source).map_err(|e| e.to_string())?,
                     s.revision,
                 ))
             }
@@ -1078,6 +1112,58 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
         return Ok(r);
     }
     match base {
+        "/api/research/launch" => {
+            crate::reference_desk::launch()?;
+            return Ok(Response::value(json!({"opened":true}), s.revision));
+        }
+        "/api/research/import" => {
+            let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
+            let mut candidate = s.project.clone();
+            let id = crate::reference_desk::import_library(
+                &mut candidate,
+                string(&v, "id")?,
+                string(&v, "fingerprint")?,
+            )?;
+            s.commit(candidate)?;
+            return Ok(Response::value(json!({"id":id}), s.revision));
+        }
+        "/api/research/upload-media" => {
+            let name = query(&req.path, "name").ok_or("Choose a source file")?;
+            if name.contains(['/', '\\']) {
+                return Err("Use a filename without folders".into());
+            }
+            let scratch = Scratch::new()?;
+            let path = scratch.0.join(&name);
+            fs::write(&path, &req.body).map_err(|e| e.to_string())?;
+            let mut candidate = s.project.clone();
+            let id = crate::reference_desk::import_media(&mut candidate, &path, &name)?;
+            s.commit(candidate)?;
+            return Ok(Response::value(json!({"id":id}), s.revision));
+        }
+        "/api/research/upload" => {
+            let name = query(&req.path, "name").ok_or("Choose a source file")?;
+            if name.contains(['/', '\\']) {
+                return Err("Use a filename without folders".into());
+            }
+            let source = crate::reference_desk::parse(&name, &req.body)?;
+            let mut candidate = s.project.clone();
+            let id = crate::reference_desk::import_source(&mut candidate, source)?;
+            s.commit(candidate)?;
+            return Ok(Response::value(json!({"id":id}), s.revision));
+        }
+        "/api/research/media" => {
+            let v: Value = serde_json::from_slice(&req.body).map_err(|e| e.to_string())?;
+            let path =
+                crate::reference_desk::path_at(&crate::reference_desk::root(), string(&v, "id")?)?;
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or("Invalid filename")?;
+            let mut candidate = s.project.clone();
+            let id = crate::reference_desk::import_media(&mut candidate, &path, name)?;
+            s.commit(candidate)?;
+            return Ok(Response::value(json!({"id":id}), s.revision));
+        }
         "/api/ai/reference" => {
             return Ok(Response::value(
                 crate::generation::upload_reference(&s.project.document_id, &req.body)?,
@@ -1443,6 +1529,10 @@ fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Sessi
             "/layout.js" => Some((
                 "text/javascript; charset=utf-8",
                 include_bytes!("../web/layout.js").as_slice(),
+            )),
+            "/research.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_bytes!("../web/research.js").as_slice(),
             )),
             "/home.js" => Some((
                 "text/javascript; charset=utf-8",

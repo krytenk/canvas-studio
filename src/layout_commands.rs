@@ -54,6 +54,12 @@ fn rgb_value(v: &Value) -> Result<ColorRgba, String> {
     Ok(rgb((n >> 16) as u8, (n >> 8) as u8, n as u8))
 }
 pub fn supports(action: &str) -> bool {
+    if matches!(
+        action,
+        "research_note" | "research_captions" | "research_remove"
+    ) {
+        return true;
+    }
     if action == "ai_import" {
         return true;
     }
@@ -86,6 +92,12 @@ pub fn supports(action: &str) -> bool {
 }
 pub fn apply(p: &mut Project, v: &Value) -> Result<(), String> {
     let action = text(v, "action")?;
+    if matches!(
+        action,
+        "research_note" | "research_captions" | "research_remove"
+    ) {
+        return crate::reference_desk::apply(p, v);
+    }
     if action == "ai_import" {
         return crate::generation::import(p, v);
     }

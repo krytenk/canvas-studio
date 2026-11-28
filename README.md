@@ -4,16 +4,23 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.20.0**, with simple one-click image/video generation on
-Kaggle, reusable reference photos, imported fonts, rich paragraphs, portable
-projects, linked collections/CSV production, books, checked word searches and local browser editing. A 42-template / 95-page visual catalog includes editable Instagram
-carousels/stories and YouTube thumbnails/channel artwork.
+Current development: **1.21.0**, with shared task-led Home screens, personal
+Reference Desk research imports, imported fonts, rich paragraphs, portable
+projects, linked collections/CSV production, books, checked word searches and
+local browser editing. A 42-template / 95-page visual catalog includes editable
+Instagram carousels/stories and YouTube thumbnails/channel artwork. Launchers
+use the publishing profile: design, campaigns, video editing and Research;
+image/video generation is an optional later capability.
 See [changes](CHANGELOG.md), the [print-first roadmap](docs/ROADMAP.md) and
 the [practical workflow guide](docs/PRINT-STUDIO-GUIDE.md).
 The [whole-app usability review](docs/USABILITY-REVIEW-2026-11-27.md) prioritises
 guided workflows, browser/desktop consistency and the requirements for public hosting.
 
 ![A4 example layout exported by Canvas Studio](docs/example-layout.png)
+
+See the [starting workflows](docs/STARTING-WORKFLOWS.md),
+[personal Research guide](docs/PERSONAL-RESEARCH.md) and
+[hosting options](docs/HOSTING-OPTIONS.md).
 
 ## Browser editing
 
@@ -34,7 +41,12 @@ groups stay linked. Browser layout tools support multi-selection, grouping,
 proportional resizing, alignment/distribution and keyboard nudges. Download all
 formats as a campaign bundle with the editable master and output manifest.
 
-## Images, video generation and GPU notebooks
+## Optional personal generation tools
+
+The publishing profile hides generation and rejects generation requests.
+`CANVAS_STUDIO_PROFILE=personal ./run.sh` explicitly opens the existing optional
+personal tools. This is not a hosted paid-generation integration; provider and
+model terms still apply.
 
 [Generation studio](docs/GENERATION-STUDIO.md) adds reviewed free-weight image/video
 recipes, live Hugging Face/Civitai metadata discovery, a model/content-mode selector,

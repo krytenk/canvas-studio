@@ -52,7 +52,9 @@ impl CanvasStudioApp {
     }
     pub(crate) fn render_film_dock(&mut self, ui: &mut Ui) {
         ui.heading("Video studio");
-        if ui.button("Generate images or footage").clicked() {
+        if crate::workflows::generation_available()
+            && ui.button("Generate images or footage").clicked()
+        {
             self.generation_ui.task = "video".into();
             self.screen = WorkspaceScreen::GenerationStudio;
         }

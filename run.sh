@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export CANVAS_STUDIO_PROFILE="${CANVAS_STUDIO_PROFILE:-publishing}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -x "$SCRIPT_DIR/canvas-studio" ]; then

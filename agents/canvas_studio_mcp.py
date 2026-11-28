@@ -19,7 +19,7 @@ import sys
 import tempfile
 from urllib.parse import urlencode
 
-VERSION = "1.20.0"
+VERSION = "1.21.0"
 PROTOCOL = "2026-07-28"
 LEGACY = "2025-11-25"
 PREFIX = "io.modelcontextprotocol/"

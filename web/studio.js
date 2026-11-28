@@ -16,7 +16,7 @@ function studioOpenInspector(name){tab(name);document.body.classList.add('inspec
 window.studioEnhancePages=()=>{const cards=[...$('pages').querySelectorAll('.page-card')];cards.forEach((card,index)=>{const number=card.querySelector('.page-index');if(!number)return;const wrap=elem('span',{class:'page-thumbnail'}),image=elem('img',{alt:'',loading:'lazy'});wrap.append(image);number.replaceWith(wrap);card.append(elem('span',{class:'page-sequence'},String(index+1).padStart(2,'0')));const load=()=>studioImage(`/api/thumbnail?page=${index}&revision=${state.revision}`).then(url=>{if(image.isConnected)image.src=url;}).catch(()=>{});if(index<7||index===page)load();else{const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){observer.disconnect();load();}},{root:$('pages')});observer.observe(card);}});};
 document.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>studioPanel(b.dataset.panel));
 // A panel hidden behind another workspace is not an already-visible toggle.
-document.querySelector('.studio-rail').addEventListener('click',event=>{if(document.body.matches('.film-open,.mockup-open,.ai-open,.home-open'))event.target.closest('[data-panel]')?.classList.remove('active');},true);
+document.querySelector('.studio-rail').addEventListener('click',event=>{if(document.body.matches('.film-open,.mockup-open,.ai-open,.home-open,.research-open'))event.target.closest('[data-panel]')?.classList.remove('active');},true);
 document.querySelectorAll('[data-studio-tool]').forEach(b=>b.onclick=()=>{const tool=b.dataset.studioTool;if(tool==='media')choosePhoto({add:true,page});else studioOpenInspector(tool==='text'?'edit':tool);});
 $('template-search').addEventListener('input',studioRenderCatalog);
 $('close-template').onclick=()=>$('template-dialog').close();
@@ -25,4 +25,4 @@ $('insert-template').onclick=()=>{const id=studioChoice.id;$('template-dialog').
 $('inspector-toggle').onclick=()=>document.body.classList.toggle('inspector-open');$('close-inspector').onclick=()=>document.body.classList.remove('inspector-open');
 document.addEventListener('keydown',event=>{if(event.key==='Escape')document.body.classList.remove('inspector-open');});
 let initialStudioView=true;
-window.studioReady=()=>{if(initialStudioView&&state){initialStudioView=false;window.studioHomeInitial?.();}window.studioHomeRefresh?.();};
+window.studioReady=()=>{if(initialStudioView&&state){initialStudioView=false;window.studioHomeInitial?.();}window.studioHomeRefresh?.();window.researchRefresh?.();};

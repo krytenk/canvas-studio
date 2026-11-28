@@ -93,8 +93,13 @@ fn save_mode(project: &Project, path: &Path, embed: bool) -> Result<(), String> 
     if !project.production.mockups.is_empty() {
         features.push("product-mockups-v1".into());
     }
+    if !project.production.research.is_empty() {
+        features.push("research-sources-v1".into());
+    }
     let envelope = Envelope {
-        version: if !project.production.mockups.is_empty() {
+        version: if !project.production.research.is_empty() {
+            6
+        } else if !project.production.mockups.is_empty() {
             5
         } else if crate::timeline::has_motion(&project.production.timeline) {
             4
@@ -165,13 +170,14 @@ pub fn load(path: &Path) -> Result<Project, String> {
         return Err("Unpacked project exceeds the size limit".into());
     }
     let envelope: Envelope = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if ![1, 2, 3, 4, 5].contains(&envelope.version)
+    if ![1, 2, 3, 4, 5, 6].contains(&envelope.version)
         || envelope.assets.len() > 10_000
         || envelope.required_features.iter().any(|f| {
             f != "studio-campaign-v1"
                 && f != "video-timeline-v1"
                 && f != "motion-keyframes-v1"
                 && f != "product-mockups-v1"
+                && f != "research-sources-v1"
         })
         || (envelope.version >= 2 && envelope.required_features.is_empty())
     {
@@ -227,6 +233,15 @@ pub fn load(path: &Path) -> Result<Project, String> {
                 .any(|f| f == "product-mockups-v1"))
     {
         return Err("Product scenes require product-mockups-v1 support".into());
+    }
+    if !project.production.research.is_empty()
+        && (envelope.version < 6
+            || !envelope
+                .required_features
+                .iter()
+                .any(|f| f == "research-sources-v1"))
+    {
+        return Err("Research sources require version 6 and research-sources-v1 support".into());
     }
     if !envelope.linked_media {
         for a in project.production.timeline.assets.values() {

@@ -72,6 +72,7 @@ pub struct ProductionSettings {
     pub studio: crate::campaign::StudioSettings,
     pub timeline: crate::timeline::Timeline,
     pub mockups: Vec<crate::mockups::Mockup>,
+    pub research: Vec<crate::reference_desk::Source>,
 }
 
 impl ProductionSettings {

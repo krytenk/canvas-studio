@@ -41,6 +41,10 @@ mod puzzle_production;
 #[cfg(test)]
 mod puzzle_tests;
 mod puzzle_ui;
+mod reference_desk;
+#[cfg(test)]
+mod research_tests;
+mod research_ui;
 mod studio_catalog;
 mod studio_ui;
 mod template_library;
@@ -91,6 +95,7 @@ use crate::templates::{
 enum WorkspaceScreen {
     HomeHub,
     GenerationStudio,
+    ResearchStudio,
     StudioEditor,
 }
 
@@ -179,6 +184,8 @@ pub struct PendingDocumentReplacement {
 
 struct CanvasStudioApp {
     screen: WorkspaceScreen,
+    home_return: WorkspaceScreen,
+    research_ui: crate::research_ui::ResearchUi,
     project: Project,
     current_page_idx: usize,
     selected_id: Option<u64>,
@@ -267,6 +274,8 @@ impl CanvasStudioApp {
 
         let mut app = Self {
             screen: WorkspaceScreen::HomeHub,
+            home_return: WorkspaceScreen::StudioEditor,
+            research_ui: Default::default(),
             project,
             current_page_idx: 0,
             selected_id: None,
@@ -635,6 +644,7 @@ impl CanvasStudioApp {
         self.revision_clock = self.document_revision + 1;
         self.pending_replace_project = None;
         self.screen = WorkspaceScreen::StudioEditor;
+        self.home_return = WorkspaceScreen::StudioEditor;
         self.status_banner = pending.banner;
         self.recovery_available = self.latest_available_recovery_path().is_some();
     }
@@ -1454,6 +1464,9 @@ impl CanvasStudioApp {
             WorkspaceScreen::GenerationStudio => {
                 egui::CentralPanel::default().show(ctx, |ui| self.render_generation_studio(ui));
             }
+            WorkspaceScreen::ResearchStudio => {
+                egui::CentralPanel::default().show(ctx, |ui| self.render_research_studio(ui));
+            }
             WorkspaceScreen::HomeHub => {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     self.render_home_hub(ui);
@@ -1595,20 +1608,17 @@ impl CanvasStudioApp {
                     .rounding(8.0);
                     if ui
                         .add(home_btn)
-                        .on_hover_text("Toggle between Visual Suite Home & Studio Editor")
+                        .on_hover_text("Home / continue current project")
                         .clicked()
                     {
-                        self.screen = match self.screen {
-                            WorkspaceScreen::HomeHub | WorkspaceScreen::GenerationStudio => WorkspaceScreen::StudioEditor,
-                            WorkspaceScreen::StudioEditor => WorkspaceScreen::HomeHub,
-                        };
+                        if self.screen==WorkspaceScreen::HomeHub { self.screen=self.home_return; } else { self.go_home(); }
                     }
 
                     if ui
                         .selectable_label(self.screen == WorkspaceScreen::HomeHub, "Home")
                         .clicked()
                     {
-                        self.screen = WorkspaceScreen::HomeHub;
+                        self.go_home();
                     }
                     if ui
                         .selectable_label(
@@ -1621,8 +1631,9 @@ impl CanvasStudioApp {
                         if self.active_dock==DockTab::Film{self.active_dock=DockTab::Templates;}
                     }
 
-                    if ui.selectable_label(self.screen==WorkspaceScreen::GenerationStudio,"Generate").clicked(){self.screen=WorkspaceScreen::GenerationStudio;}
+                    if crate::workflows::generation_available() && ui.selectable_label(self.screen==WorkspaceScreen::GenerationStudio,"Generate").clicked(){self.screen=WorkspaceScreen::GenerationStudio;}
                     if ui.selectable_label(self.screen==WorkspaceScreen::StudioEditor&&self.active_dock==DockTab::Film,"Video studio").clicked(){self.screen=WorkspaceScreen::StudioEditor;self.active_dock=DockTab::Film;}
+                    if ui.selectable_label(self.screen==WorkspaceScreen::ResearchStudio,"Research").clicked(){self.screen=WorkspaceScreen::ResearchStudio;}
                     ui.separator();
 
                     // Undo / Redo with revision-accurate dirty reconciliation

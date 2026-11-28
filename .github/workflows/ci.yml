@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+# Legacy optional generation checks opt in; publishing acceptance scripts override this.
+env:
+  CANVAS_STUDIO_PROFILE: personal
+
 jobs:
   check:
     runs-on: ubuntu-24.04
@@ -48,6 +52,10 @@ jobs:
           .ui-venv/bin/python scripts/browser_smoke.py --binary target/release/canvas-studio --chrome chromium
           .ui-venv/bin/python scripts/workflow_smoke.py --binary target/release/canvas-studio --chrome chromium
           .ui-venv/bin/python scripts/native_smoke.py --binary target/release/canvas-studio
+      - name: Exercise personal Research, portable sources and publishing profile
+        run: |
+          .ui-venv/bin/python scripts/research_smoke.py --binary target/release/canvas-studio --chrome chromium
+          .ui-venv/bin/python scripts/native_research_smoke.py --binary target/release/canvas-studio
       - name: Exercise the STDIO agent protocol and workspace delivery
         run: .ui-venv/bin/python scripts/mcp_smoke.py --binary target/release/canvas-studio
       - name: Exercise cross-format campaigns and live layout editing
@@ -72,6 +80,11 @@ jobs:
         with:
           name: canvas-studio-ui-proofs
           path: |
+            qa/research/*.png
+            qa/research/report.json
+            qa/native-research/*.png
+            qa/native-research/result.txt
+            qa/native-research/native.log
             qa/workflows/*.png
             qa/workflows/report.json
             qa/search-session/*.png

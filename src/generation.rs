@@ -503,6 +503,10 @@ mod reference_tests {
     }
 }
 pub(crate) fn start(project: &Project, revision: u64, mut value: Value) -> Result<String, String> {
+    if !crate::workflows::generation_available() {
+        return Err("Generation is disabled in the publishing profile".into());
+    }
+
     let allowed = [
         "operation",
         "model_id",

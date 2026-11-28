@@ -1614,6 +1614,7 @@ pub fn save_project_json(project: &Project, path: &Path) -> Result<(), String> {
     if project.production.studio.active()
         || project.production.timeline.active()
         || !project.production.mockups.is_empty()
+        || !project.production.research.is_empty()
     {
         return crate::project_package::save(project, path);
     }
@@ -1639,6 +1640,7 @@ pub(crate) fn save_project_manifest(project: &Project, path: &Path) -> Result<()
         )
     })?;
 
+    crate::reference_desk::validate(project)?;
     crate::campaign::validate(project)?;
     crate::timeline::validate(&project.production.timeline)?;
     crate::mockups::validate(&project)?;
@@ -1711,6 +1713,7 @@ pub fn load_project_json(path: &Path) -> Result<Project, String> {
         .map_err(|e| format!("Failed reading project file '{}': {e}", path.display()))?;
     let mut project: Project = serde_json::from_str(&data)
         .map_err(|e| format!("Failed parsing project JSON '{}': {e}", path.display()))?;
+    crate::reference_desk::validate(&project)?;
     crate::campaign::validate(&project)?;
     crate::timeline::validate(&project.production.timeline)?;
     crate::mockups::validate(&project)?;

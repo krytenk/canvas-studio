@@ -1,6 +1,13 @@
 use super::*;
 
 impl CanvasStudioApp {
+    pub(crate) fn go_home(&mut self) {
+        if self.screen != WorkspaceScreen::HomeHub {
+            self.home_return = self.screen;
+        }
+        self.screen = WorkspaceScreen::HomeHub;
+    }
+
     pub(crate) fn open_workflow(&mut self, id: &str) {
         self.dock_open = true;
         match id {
@@ -18,7 +25,10 @@ impl CanvasStudioApp {
                 self.screen = WorkspaceScreen::StudioEditor;
                 self.active_dock = DockTab::Film;
             }
-            "image" => {
+            "research" => {
+                self.screen = WorkspaceScreen::ResearchStudio;
+            }
+            "image" if crate::workflows::generation_available() => {
                 self.generation_ui.task = "image".into();
                 self.screen = WorkspaceScreen::GenerationStudio;
             }
@@ -73,7 +83,7 @@ impl CanvasStudioApp {
             ui.strong(format!("Current project: {}", self.project.title));
             ui.label(format!("{} page(s) · {}", self.project.pages.len(), if self.dirty {"Unsaved changes - save an editable copy to keep them."} else if self.current_project_path.is_some() {"Saved file open."} else {"Ready for your next idea."}));
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Continue current project").clicked() { self.screen = WorkspaceScreen::StudioEditor; }
+                if ui.button("Continue current project").clicked() { self.screen = self.home_return; }
                 if ui.button("Open design...").clicked() { self.open_design_picker(); }
             });
             ui.add_space(12.);
@@ -107,8 +117,12 @@ mod tests {
             app.open_workflow(task.id);
             assert_eq!(serde_json::to_value(&app.project).unwrap(), original);
             assert!(app.dirty);
+            let screen = app.screen;
+            app.go_home();
+            assert_eq!(app.home_return, screen);
+            app.screen = app.home_return;
             match task.id {
-                "image" => assert_eq!(app.screen, WorkspaceScreen::GenerationStudio),
+                "research" => assert_eq!(app.screen, WorkspaceScreen::ResearchStudio),
                 "video" => assert_eq!(app.active_dock, DockTab::Film),
                 "campaign" => assert_eq!(app.active_dock, DockTab::BrandKit),
                 _ => assert_eq!(app.active_dock, DockTab::Templates),
