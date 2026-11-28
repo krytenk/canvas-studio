@@ -148,6 +148,11 @@ def run(binary,chrome=None,local=False):
     assert (automatic[0]['steps'],automatic[0]['adapter'])==(4,'sdxl-lightning-4')
     assert not page.get_by_role('button',name='Submit to Kaggle',exact=True).is_visible();assert page.get_by_role('button',name='Use in design',exact=True).is_visible()
     page.locator('#ai-jobs img').wait_for();page.wait_for_function("() => document.querySelector('#ai-jobs img').naturalWidth>0")
+    def use_fixture(route):
+     if route.request.post_data_json.get('action')=='ai_import':route.fulfill(status=200,content_type='application/json',body='{}')
+     else:route.continue_()
+    page.route('**/api/command',use_fixture);page.get_by_role('button',name='Use in design',exact=True).click();page.wait_for_selector('#generation-studio',state='hidden')
+    page.get_by_role('button',name='Image and video generation',exact=True).click();page.wait_for_selector('#generation-studio:visible')
     page.screenshot(path=qa/'simple-generation.png',full_page=True)
     page.set_viewport_size({'width':720,'height':1000});assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth'),'Generation layout overflows';page.screenshot(path=qa/'simple-generation-narrow.png',full_page=True)
     assert not errors,errors;context.close();browser.close()
