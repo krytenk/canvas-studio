@@ -1,5 +1,11 @@
 # Canvas Studio validation
 
+## 1.21.0 publishing workflows and personal Research
+
+See [the measured 1.21.0 acceptance report](VALIDATION-1.21.0.md) for the common
+Home, publishing defaults, Reference Desk bridge, portable format and native/browser
+checks.
+
 ## 1.19.0 simple background generation
 
 97 local Rust tests and 36 provider-independent Python checks pass. Workflow tests
