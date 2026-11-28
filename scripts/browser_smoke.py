@@ -140,6 +140,15 @@ def run(binary,chrome):
                 assert page.locator('#film-studio').is_visible()
                 page.get_by_role('button',name=target,exact=True).click()
                 assert not page.locator('#film-studio').is_visible(),target
+                if target=='Design library':assert page.locator('#design-panel').is_visible()
+                if target=='Document pages':assert page.locator('#pages-panel').is_visible()
+            # Returning to an already-selected library must show it, not toggle
+            # it closed because its DOM panel was open behind the other studio.
+            for workspace in ['Film studio','Product mockups','Image and video generation']:
+                if not page.locator('#design-panel').is_visible():page.get_by_role('button',name='Design library',exact=True).click()
+                page.get_by_role('button',name=workspace,exact=True).click()
+                page.get_by_role('button',name='Design library',exact=True).click()
+                assert page.locator('#design-panel').is_visible(),workspace
             page.get_by_role('button',name='Film studio',exact=True).click()
             page.locator('#film-close').click()
             assert not page.locator('#film-studio').is_visible()
