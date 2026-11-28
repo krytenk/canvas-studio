@@ -5,6 +5,55 @@ Generation studio, using the same native worker/backend as the desktop app.
 It is separate from the offline CI fixtures and tiny random CPU integration test.
 No provider credentials are included in the notebooks, repository or this report.
 
+## One-click background generation — passed in 1.19.0
+
+The normal desktop/browser flow is now model, prompt, optional photos and
+**Generate**. Two real private Tesla T4 tests exercised this flow from the browser:
+
+| Creation | Reviewed recipe | Returned asset | Inference time |
+| --- | --- | --- | --- |
+| Image | RealVisXL 5 + pinned four-step SDXL Lightning | 512 × 768 PNG | 33.18 seconds |
+| Photo animation | LTX Video 2B 0.9.5, BF16, 30 steps, one supplied portrait | 384 × 512, 49 frames, 24 fps MP4 | 203.58 seconds |
+
+These times exclude provisioning, packages and weight downloads. Each successful
+test document has exactly one `create` request. Submission, remote status checks,
+receipt verification and local download happened in the worker. Both results
+appeared automatically in **Your creations** without clicking separate submit,
+check or fetch controls. Existing saved credentials were reused.
+
+The app server was restarted while the video was running. Its existing worker
+continued, the same job/run reappeared, and the result arrived without resubmitting
+or pressing Generate again. A film-frame render also completed while generation
+was in progress. The browser video played to its end without a media error; all
+49 decoded frames are distinct. **Use in design / Use in video** imported the
+returned media and opened the matching editor. Both resulting portable projects
+passed the native project verifier.
+
+The first local attempts caught a duplicate `phase` keyword in the progress
+bridge before any notebook manifest or GPU submission was made. This was fixed
+and tested with real worker phase/run/PID data. Provider-independent tests also
+cover network recovery, Continue without another submission, terminal failures,
+recommended settings and preserving explicit advanced choices.
+
+The matching simplified native screen was checked from isolated Xvfb screenshots
+at 1280 × 900 and 1024 × 680, including an existing saved connection. Width, steps,
+precision, notebook tools and manual status history are absent from the normal
+screen and remain available in collapsed panels. Browser checks cover a 720 px
+layout, private-session reconnection, credential preservation and model discovery.
+
+Output hashes:
+
+- Image: `d84d3dabb496d1a366a3d03d0b4a2a0fc3d301de28a3ff9f11ff89604d249459`.
+- Video: `01cd9726f31f566664336a6bc4703131b67985b8152d3678203301e4ded25666`.
+
+97 Rust tests, 36 provider-independent Python checks and the full
+[Linux CI suite](https://github.com/krytenk/canvas-studio/actions/runs/46091854683)
+passed for code commit `d02983e08adf585b5af6c062ab09649a92a934e2`.
+
+The generated media, reference photograph, keys and private notebook sources are
+kept outside Git and the public release. Model identity/quality limitations from
+the earlier scoped tests still apply; simplification changes the workflow.
+
 ## Image — passed
 
 - Model: `SG161222/RealVisXL_V5.0`, pinned catalog revision, compatible pinned
