@@ -46,6 +46,7 @@ jobs:
       - name: Exercise the browser editor and native window
         run: |
           .ui-venv/bin/python scripts/browser_smoke.py --binary target/release/canvas-studio --chrome chromium
+          .ui-venv/bin/python scripts/workflow_smoke.py --binary target/release/canvas-studio --chrome chromium
           .ui-venv/bin/python scripts/native_smoke.py --binary target/release/canvas-studio
       - name: Exercise the STDIO agent protocol and workspace delivery
         run: .ui-venv/bin/python scripts/mcp_smoke.py --binary target/release/canvas-studio
@@ -71,6 +72,8 @@ jobs:
         with:
           name: canvas-studio-ui-proofs
           path: |
+            qa/workflows/*.png
+            qa/workflows/report.json
             qa/search-session/*.png
             qa/search-session/report.json
             qa/native-generation/*.png

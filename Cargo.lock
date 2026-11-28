@@ -618,7 +618,7 @@ dependencies = [
 
 [[package]]
 name = "canvas-studio"
-version = "1.19.1"
+version = "1.20.0"
 dependencies = [
  "ab_glyph",
  "base64 0.22.1",

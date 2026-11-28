@@ -203,6 +203,7 @@ fn minimum_window_fits_the_page_and_long_books_keep_navigation_bounded() {
     let mut app = CanvasStudioApp::new_headless_with_recovery_dir(Some(
         std::env::temp_dir().join(model::generate_document_id()),
     ));
+    app.open_workflow("product");
     for i in 1..100 {
         let id = app.project.alloc_id();
         app.project

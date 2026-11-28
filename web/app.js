@@ -44,7 +44,7 @@ function select(id){document.body.classList.add('inspector-open');selected=id;re
 async function refresh(){
  const response=await api(`/api/state?page=${page}`);state=await response.json();page=state.page;if(!state.elements.some(e=>e.id===selected))selected=null;
  $('document-title').value=drafts.get('document-title')?.value??state.title;$('page-title').value=drafts.get('page-title')?.value??state.pages[page].title;$('page-count').textContent=state.pages.length;
- $('session-state').textContent=`${state.recovery?'Recovery saved on this device':'Session only'}${pending?' · Save a copy when ready':''}`;
+ $('session-state').textContent=`Canvas Studio ${state.version} · ${state.recovery?'Recovery saved on this device':'Session only'}${pending?' · Save a copy when ready':''}`;
  $('dimensions').textContent=`${state.width_mm.toFixed(1)} × ${state.height_mm.toFixed(1)} mm · page ${page+1} of ${state.pages.length}`;
  $('undo').disabled=!state.undo;$('redo').disabled=!state.redo;$('up-page').disabled=page===0;$('down-page').disabled=page===state.pages.length-1;$('delete-page').disabled=state.pages.length===1;
  renderPages();renderFields();renderLayers();renderSelection();renderTargets();fit();await renderPreview();if(window.studioReady)window.studioReady();
@@ -89,7 +89,7 @@ function renderTargets(){const root=$('hit-targets');root.replaceChildren();if(!
 }
 async function renderPreview(){if(window.studioRenderPreview)return window.studioRenderPreview();const sequence=++previewSequence;try{const response=await api(`/api/preview.svg?page=${page}`);const blob=await response.blob();if(sequence!==previewSequence)return;const url=URL.createObjectURL(blob),old=previewURL;previewURL=url;$('preview').src=url;if(old)URL.revokeObjectURL(old);}catch(error){if(sequence===previewSequence){$('preview').removeAttribute('src');notice(`Preview: ${error.message}`,true);}}}
 function fit(){if(!state)return;const area=$('paper-scroll');let scale=$('zoom').value==='fit'?Math.min((area.clientWidth-54)/state.width,(area.clientHeight-50)/state.height):Number($('zoom').value);scale=Math.max(.08,scale);$('paper').style.width=`${state.width*scale}px`;$('paper').style.height=`${state.height*scale}px`;}
-async function upload(path,file){return serial(async()=>{await api(path,{method:'POST',body:file});if(path==='/api/open'){drafts.clear();updateDraftNotice();}pending=true;await refresh();if(path.startsWith('/api/add-image'))select(state.elements.at(-1).id);});}
+async function upload(path,file){return serial(async()=>{await api(path,{method:'POST',body:file});if(path==='/api/open'){drafts.clear();updateDraftNotice();}pending=true;await refresh();if(path==='/api/open')window.studioHomeOpened?.();if(path.startsWith('/api/add-image'))select(state.elements.at(-1).id);});}
 let photoTarget=null;
 function choosePhoto(target){photoTarget=target;$('photo-file').value='';$('photo-file').click();}
 async function download(path,name){return serial(async()=>{if(drafts.size){notice('Apply your form edits before downloading, or discard the unapplied edits.',true);return;}const response=await api(path);const revision=Number(response.headers.get('X-Canvas-Revision'));const url=URL.createObjectURL(await response.blob());const a=elem('a',{href:url,download:name});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);if(name.endsWith('.canvas')&&revision===state.revision){pending=false;$('session-state').textContent=`Local engine · ${state.version} · Editable copy downloaded`;}notice(`Downloaded ${name}.`);});}

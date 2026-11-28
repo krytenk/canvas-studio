@@ -19,10 +19,10 @@ def run(binary):
   driver=qa/'driver.py';driver.write_text('''import sys,time,importlib
 sys.path.insert(0,sys.argv[1]);import native_ui as ui
 ui.X.XMoveResizeWindow(ui.d,ui.w,0,0,1280,900);ui.X.XFlush(ui.d);time.sleep(.8)
-ui=importlib.reload(ui);ui.focus();ui.click(274,20);ui.screenshot(sys.argv[2]+'/generate.png')
+ui=importlib.reload(ui);ui.focus();ui.screenshot(sys.argv[2]+'/home.png');ui.click(274,20);ui.screenshot(sys.argv[2]+'/generate.png')
 ui.click(351,20);ui.screenshot(sys.argv[2]+'/video.png')
 ui.X.XMoveResizeWindow(ui.d,ui.w,0,0,1024,680);ui.X.XFlush(ui.d);time.sleep(.5)
-ui=importlib.reload(ui);ui.click(274,20);ui.screenshot(sys.argv[2]+'/minimum.png')
+ui=importlib.reload(ui);ui.click(158,20);ui.screenshot(sys.argv[2]+'/home-minimum.png');ui.click(274,20);ui.screenshot(sys.argv[2]+'/minimum.png')
 
 ''')
   subprocess.run([sys.executable,str(driver),str(ROOT/'scripts'),str(qa)],env=env,check=True)

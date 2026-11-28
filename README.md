@@ -4,7 +4,7 @@ A standalone desktop editor for visual designs and printable documents, written
 in Rust with egui. Design and editing run locally, without an account,
 subscription or connected model service.
 
-Current development: **1.19.1**, with simple one-click image/video generation on
+Current development: **1.20.0**, with simple one-click image/video generation on
 Kaggle, reusable reference photos, imported fonts, rich paragraphs, portable
 projects, linked collections/CSV production, books, checked word searches and local browser editing. A 42-template / 95-page visual catalog includes editable Instagram
 carousels/stories and YouTube thumbnails/channel artwork.

@@ -189,6 +189,7 @@ fn request(stream: &mut TcpStream, gate: Option<(&str, &str)>) -> Result<Request
                 "/",
                 "/app.js",
                 "/studio.js",
+                "/home.js",
                 "/layout.js",
                 "/bundle.js",
                 "/film.js",
@@ -781,7 +782,7 @@ fn state(s: &Session, page: usize) -> Value {
             timeline["clips"][i]["caption"]["family"] = json!(family(st.family));
         }
     }
-    json!({"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p),"timeline":timeline,"mockups":p.production.mockups})
+    json!({"blank":crate::workflows::is_blank(p),"version":env!("CARGO_PKG_VERSION"),"revision":s.revision,"document_id":p.document_id,"actor":s.last_actor,"title":p.title,"width":p.width,"height":p.height,"width_mm":p.effective_width_mm(),"height_mm":p.effective_height_mm(),"page":page,"pages":p.pages.iter().map(|p|json!({"id":p.id.to_string(),"title":p.title})).collect::<Vec<_>>(),"elements":elements,"fields":fields,"fonts":fonts,"undo":!s.undo.is_empty(),"redo":!s.redo.is_empty(),"recovery":s.recovery.is_some(),"studio":studio_state(p),"timeline":timeline,"mockups":p.production.mockups})
 }
 fn studio_state(p: &Project) -> Value {
     let s = &p.production.studio;
@@ -956,6 +957,7 @@ fn route(req: &Request, s: &mut Session) -> Result<Response, String> {
                     s.revision,
                 ))
             }
+            "/api/workflows" => Ok(Response::value(crate::workflows::catalog(), s.revision)),
             "/api/templates" => Ok(Response::value(
                 crate::studio_catalog::catalog(),
                 s.revision,
@@ -1441,6 +1443,10 @@ fn handle(stream: &mut TcpStream, host: &str, token: &str, session: &Mutex<Sessi
             "/layout.js" => Some((
                 "text/javascript; charset=utf-8",
                 include_bytes!("../web/layout.js").as_slice(),
+            )),
+            "/home.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_bytes!("../web/home.js").as_slice(),
             )),
             "/studio.js" => Some((
                 "text/javascript; charset=utf-8",

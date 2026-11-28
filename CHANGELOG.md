@@ -1,5 +1,12 @@
 # Changes
 
+## 1.20.0 — shared starting workflows
+
+- Start new desktop and browser sessions with the same four tasks: Design a product, Create a campaign, Make a video and Generate an image.
+- Preserve current projects and unapplied browser forms when visiting Home or changing tasks; continue or open saved designs directly.
+- Use shared task descriptions and explain the remaining desktop-only production tools. Put native campaign setup with campaign colours and show the running browser version.
+- Check first use, draft preservation, all four task routes, editable delivery/opening and a narrow viewport; keep native Home proofs with generation navigation checks.
+
 ## 1.19.1 — clearer workspace navigation
 
 - Return from Video to the clicked design tool immediately, matching Generate and Mockups. Add an explicit Back to design button.

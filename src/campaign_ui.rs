@@ -19,7 +19,7 @@ impl CanvasStudioApp {
         }
     }
     pub(crate) fn render_campaign_layouts(&mut self, ui: &mut Ui) {
-        ui.collapsing("Campaign layouts",|ui| {
+        egui::CollapsingHeader::new("Campaign layouts").default_open(self.active_dock==DockTab::BrandKit).show(ui,|ui| {
             ui.label("Independent compositions. Shared copy, colours and reusable groups.");
             if ui.button("Start a four-format campaign").clicked(){self.request_replace_document(crate::campaign::starter(),None,"Started a linked campaign".into());}
             if let Some(active)=&self.project.production.studio.active_variant{ui.strong(format!("Current: {active}"));}

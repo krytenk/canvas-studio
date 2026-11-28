@@ -52,6 +52,8 @@ mod timeline_tests;
 mod typography_tests;
 #[cfg(test)]
 mod workflow_tests;
+mod workflow_ui;
+mod workflows;
 
 use std::path::{Path, PathBuf};
 
@@ -135,7 +137,7 @@ impl DockTab {
             DockTab::Templates => ("📐", "Design"),
             DockTab::Elements => ("❖", "Elements"),
             DockTab::Text => ("𝐓", "Text"),
-            DockTab::BrandKit => ("👑", "Brand"),
+            DockTab::BrandKit => ("👑", "Campaign"),
             DockTab::Uploads => ("🖼", "Uploads"),
             DockTab::MagicStudio => ("✨", "Tools"),
             DockTab::ChartsAndTables => ("📊", "Charts"),
@@ -144,7 +146,7 @@ impl DockTab {
             DockTab::Production => ("▤", "Production"),
             DockTab::Book => ("▥", "Book"),
             DockTab::Puzzles => ("▦", "Puzzles"),
-            DockTab::Film => ("▷", "Film"),
+            DockTab::Film => ("▷", "Video"),
             DockTab::AppInfo => ("ⓘ", "About"),
         }
     }
@@ -264,7 +266,7 @@ impl CanvasStudioApp {
         let stock_assets = generate_builtin_stock_assets();
 
         let mut app = Self {
-            screen: WorkspaceScreen::StudioEditor,
+            screen: WorkspaceScreen::HomeHub,
             project,
             current_page_idx: 0,
             selected_id: None,
@@ -1835,141 +1837,7 @@ impl CanvasStudioApp {
     }
 
     fn render_home_hub(&mut self, ui: &mut Ui) {
-        ScrollArea::vertical().show(ui, |ui| {
-            ui.add_space(16.0);
-            egui::Frame::none()
-                .fill(Color32::from_rgb(28, 37, 44))
-                .rounding(18.0)
-                .inner_margin(Margin::symmetric(32.0, 28.0))
-                .stroke(Stroke::new(1.5_f32, Color32::from_rgb(58, 156, 130)))
-                .show(ui, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            RichText::new("Your ideas. One studio.")
-                                .size(36.0)
-                                .strong()
-                                .color(Color32::WHITE),
-                        );
-                        ui.add_space(6.0);
-                        ui.label(
-                            RichText::new(
-                                "Create A4, US Letter and 5×7 designs locally. Check print preflight before exporting.",
-                            )
-                            .size(16.0)
-                            .color(Color32::from_rgb(186, 230, 253)),
-                        );
-                        ui.add_space(18.0);
-
-                        ui.horizontal_wrapped(|ui| {
-                            for fmt in DesignFormat::all_presets() {
-                                let (w, h) = fmt.dimensions();
-                                let (mm_w, mm_h) = fmt.physical_dimensions_mm();
-                                let btn = egui::Button::new(
-                                    RichText::new(format!(
-                                        "{}\n{:.0}×{:.0} px ({:.0}×{:.0} mm)",
-                                        fmt.label(),
-                                        w,
-                                        h,
-                                        mm_w,
-                                        mm_h
-                                    ))
-                                    .size(12.5)
-                                    .color(Color32::WHITE),
-                                )
-                                .fill(Color32::from_rgb(38, 43, 68))
-                                .rounding(10.0)
-                                .min_size(Vec2::new(165.0, 58.0));
-
-                                if ui.add(btn).clicked() {
-                                    let new_proj = Project {
-                                        schema_version: 2,
-                                        document_id: crate::model::generate_document_id(),
-                                        recovery_origin_path: None,
-                                        title: format!("Untitled {}", fmt.label()),
-                                        format: fmt,
-                                        width: w,
-                                        height: h,
-                                        width_mm: mm_w,
-                                        height_mm: mm_h,
-                                        units_per_inch: 96.0,
-                                        bleed_mm: 0.0,
-                                        crop_marks: false,
-                                        pages: vec![CanvasPage::new(1, "Page 1")],
-                                        brand_kit: Default::default(),
-                                        imported_fonts: Vec::new(),
-                                        print_settings: Default::default(),
-                                        production: Default::default(),
-                                        next_id: 100,
-                                    };
-                                    let msg = format!("Created new {} project", fmt.label());
-                                    self.request_replace_document(new_proj, None, msg);
-                                }
-                            }
-                        });
-                    });
-                });
-
-
-
-            ui.add_space(24.0);
-            ui.label(
-                RichText::new("Made for your next project")
-                    .size(22.0)
-                    .strong()
-                    .color(Color32::WHITE),
-            );
-            ui.add_space(10.0);
-
-            ui.horizontal_wrapped(|ui| {
-                for tpl in available_templates() {
-                    let (tw, th) = tpl.format.dimensions();
-                    egui::Frame::none()
-                        .fill(Color32::from_rgb(24, 27, 36))
-                        .rounding(12.0)
-                        .inner_margin(Margin::same(16.0))
-                        .stroke(Stroke::new(1.0_f32, to_egui_color(tpl.accent)))
-                        .show(ui, |ui| {
-                            ui.set_width(240.0);
-                            ui.label(
-                                RichText::new(tpl.category)
-                                    .size(11.0)
-                                    .strong()
-                                    .color(to_egui_color(tpl.accent)),
-                            );
-                            ui.label(
-                                RichText::new(tpl.name)
-                                    .size(17.0)
-                                    .strong()
-                                    .color(Color32::WHITE),
-                            );
-                            ui.label(
-                                RichText::new(tpl.subtitle)
-                                    .size(12.0)
-                                    .color(Color32::from_rgb(148, 163, 184)),
-                            );
-                            ui.label(
-                                RichText::new(format!("{:.0} x {:.0} px", tw, th))
-                                    .size(11.0)
-                                    .color(Color32::GRAY),
-                            );
-                            ui.add_space(8.0);
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("Open in Studio ->").strong(),
-                                    )
-                                    .fill(to_egui_color(tpl.accent)),
-                                )
-                                .clicked()
-                            {
-                                let proj = build_template_project(tpl.id);
-                                let msg = format!("Loaded template '{}'", tpl.name);
-                                self.request_replace_document(proj, None, msg);
-                            }
-                        });
-                }
-            });
-        });
+        self.render_start_screen(ui);
     }
 
     fn render_contextual_action_bar(&mut self, ctx: &Context) {
@@ -3108,6 +2976,7 @@ impl CanvasStudioApp {
     }
 
     fn render_dock_brand_kit(&mut self, ui: &mut Ui) {
+        self.render_campaign_layouts(ui);
         self.render_campaign_brand(ui);
         ui.separator();
         ui.heading("👑 Brand Kit");
